@@ -13,7 +13,7 @@ macro_rules! assert_delta {
     };
 }
 
-trait Coord {
+pub trait Coord {
     fn new(x: f64, y: f64, z: f64) -> Self;
 
     fn to_vec(self) -> Vector;
@@ -23,8 +23,8 @@ trait Coord {
     fn zero() -> Self;
 }
 
-#[derive(Debug, Clone)]
-struct Vector {
+#[derive(Debug, Clone, Copy)]
+pub struct Vector {
     pub x: f64,
     pub y: f64, 
     pub z: f64,
@@ -113,6 +113,17 @@ impl Mul<Vector> for Vector {
     }
 }
 
+impl Mul<Vector> for f64 {
+    type Output = Vector;
+    fn mul(self, rhs: Vector) -> Self::Output {
+        Self::Output {
+            x: self * rhs.x,
+            y: self * rhs.y,
+            z: self * rhs.z,
+        }
+    }
+}
+
 impl Div<f64> for Vector {
     type Output = Self;
     fn div(self, rhs: f64) -> Self::Output {
@@ -138,8 +149,8 @@ impl PartialEq<Point> for Vector {
     }
 }
 
-#[derive(Debug, Clone)]
-struct Point {
+#[derive(Debug, Clone, Copy)]
+pub struct Point {
     pub x: f64,
     pub y: f64, 
     pub z: f64,
