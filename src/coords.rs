@@ -1,17 +1,9 @@
 use std::ops::{Add, Sub, Neg, Mul, Div};
-use std::cmp::{Eq, PartialEq};
+use std::cmp::{PartialEq};
 
-/// Assert that `x` and `y` are within `d` of each other. 
-/// Useful for checking floating-point values for equality.
-macro_rules! assert_delta {
-    ($x:expr, $y:expr, $d:expr) => {
-        if $x - $y > 0.0 {
-            assert!($x - $y < $d);
-        } else {
-            assert!($y - $x < $d);
-        }
-    };
-}
+#[cfg(test)]
+use crate::assert_delta;
+
 
 pub trait Coord {
     fn new(x: f64, y: f64, z: f64) -> Self;
@@ -225,7 +217,7 @@ fn cross(lhs: Vector, rhs: Vector) -> Vector {
     Vector::new(lhs.y * rhs.z - lhs.z * rhs.y, lhs.z * rhs.x - lhs.x * rhs.z, lhs.x *rhs.y - lhs.y*rhs.x)
 }
 
-
+// Tests
 #[test]
 fn create_point() {
     let pt = Point::new(4.3, -4.2, 3.1);
