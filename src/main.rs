@@ -2,7 +2,7 @@
 mod utils;
 mod coords;
 mod canvas;
-
+mod matrix;
 
 use coords::{Point, Vector, Coord};
 use canvas::{Canvas, Pixel};
