@@ -5,7 +5,7 @@ use crate::coords::{Vector, Point, Coord};
 use crate::utils::{float_eq, float_approx};
 
 #[derive(Debug, Clone)]
-struct Matrix {
+pub struct Matrix {
     width: usize,
     height: usize,
     data: Vec<Vec<f64>>,
@@ -210,7 +210,34 @@ impl Mul<Vector> for &Matrix {
     }
 }
 
+impl Mul<Vector> for Matrix {
+    type Output = Vector;
+    fn mul(self, rhs: Vector) -> Self::Output {
+        assert_eq!(self.columns(), 4);
+        let mut v = Vector::zero();
+        v.x = self.data[0][0]*rhs.x + self.data[0][1]*rhs.y + self.data[0][2]*rhs.z + self.data[0][3]*0.0;
+        v.y = self.data[1][0]*rhs.x + self.data[1][1]*rhs.y + self.data[1][2]*rhs.z + self.data[1][3]*0.0;
+        v.z = self.data[2][0]*rhs.x + self.data[2][1]*rhs.y + self.data[2][2]*rhs.z + self.data[2][3]*0.0;
+        //no modification of last row
+        v
+    }
+}
+
 impl Mul<Point> for &Matrix {
+    type Output = Point;
+    fn mul(self, rhs: Point) -> Self::Output {
+        assert_eq!(self.columns(), 4);
+        let mut v = Point::zero();
+        v.x = self.data[0][0]*rhs.x + self.data[0][1]*rhs.y + self.data[0][2]*rhs.z + self.data[0][3]*1.0;
+        v.y = self.data[1][0]*rhs.x + self.data[1][1]*rhs.y + self.data[1][2]*rhs.z + self.data[1][3]*1.0;
+        v.z = self.data[2][0]*rhs.x + self.data[2][1]*rhs.y + self.data[2][2]*rhs.z + self.data[2][3]*1.0;
+        assert_eq!(self.data[3].iter().sum::<f64>(), 1.0);
+        //no modification of last row
+        v
+    }
+}
+
+impl Mul<Point> for Matrix {
     type Output = Point;
     fn mul(self, rhs: Point) -> Self::Output {
         assert_eq!(self.columns(), 4);
