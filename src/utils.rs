@@ -1,3 +1,5 @@
+use std::sync::atomic::AtomicUsize;
+
 /// Assert that `x` and `y` are within `d` of each other. 
 /// Useful for checking floating-point values for equality.
 #[macro_export]
@@ -19,6 +21,18 @@ pub fn float_eq(lhs: f64, rhs: f64) -> bool {
 #[inline]
 pub fn float_approx(lhs: f64, rhs: f64, tol: f64) -> bool {
     f64::abs(lhs - rhs) < tol
+}
+
+static COUNTER: AtomicUsize = AtomicUsize::new(1);
+
+pub struct IDManager {
+
+}
+
+impl IDManager {
+    pub fn make_id() -> usize {
+        COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    }
 }
 
 #[test]
