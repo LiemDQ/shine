@@ -320,7 +320,9 @@ impl Mul<Point> for Matrix {
     }
 }
 
-/// Optimized 4x4 matrix stored on the stack
+/// Optimized 4x4 matrix stored on the stack. This should be the default data structure used for matrix manipulations.
+/// Operations such as matrix multiplication and transformations are ~10-50x faster than the equivalent Matrix operations,
+/// as no dynamic memory allocations need to be performed. 
 #[derive(Debug, Clone, Copy)]
 pub struct Matrix4 {
     data: [[f64;4]; 4]

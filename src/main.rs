@@ -6,19 +6,20 @@ mod matrix;
 mod transforms;
 mod ray;
 mod geometry;
+mod world;
 
 use coords::{Point, Vector, Coord};
 use canvas::{Canvas, Pixel};
 use geometry::Sphere;
 use std::{fs, io};
-use matrix::Matrix;
+use matrix::{Matrix, Matrix4, LinAlg};
 use transforms::*;
 
 use ray::{Ray, Intersection, hit, lighting};
 
 use crate::{ray::PointLight, canvas::Color};
 
-const CANVAS_DIM: usize = 500;
+const CANVAS_DIM: usize = 1000;
 
 struct Projectile {
     pub position: Point,
@@ -60,10 +61,10 @@ fn main() -> io::Result<()> {
     let mut shape = Sphere::new(1);
     shape.material.color = PINK;
 
-    //shape.set_transform(scaling(1., 0.5, 1.).translation(1., -1., 0.));
+    //shape.set_transform(scaling(1., 0.5, 1.));
 
     //add a light source.
-    let light = PointLight::new(Point::new(-10., 10., -10.), Color::white());
+    let light = PointLight::new(Point::new(0., -10., 0.), Color::white());
 
     for y in 0..CANVAS_DIM {
         //y coordinate of world, with the top = +half and bottom = -half
