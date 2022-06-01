@@ -1,10 +1,10 @@
 use std::cmp::PartialEq;
 use std::ops::{Add, Sub, Mul};
-use crate::utils::float_eq;
+use crate::utils::{float_eq, float_approx};
 
 const MAX_PPM_LINE_WIDTH : usize = 70;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Color {
     pub red: f64,
     pub green: f64,
@@ -14,6 +14,26 @@ pub struct Color {
 impl Color {
     pub const fn new(r: f64, g: f64, b: f64) -> Self {
         Self { red: r, green: g, blue: b }
+    }
+
+    pub fn red() -> Self {
+        Self { red: 1.0, green: 0., blue: 0. }
+    }
+
+    pub fn green() -> Self {
+        Self { red: 0.0, green: 1.0, blue: 0. }
+    }
+
+    pub fn blue() -> Self {
+        Self { red: 0.0, green: 0., blue: 1.0 }
+    }
+
+    pub fn white() -> Self {
+        Self { red: 1.0, green: 1.0, blue: 1.0 }
+    }
+
+    pub fn black() -> Self {
+        Self { red: 0.0, green: 0.0, blue: 0.0 }
     }
 
     pub fn clamp(&mut self, min_val: f64, max_val: f64) -> &mut Self {
@@ -29,14 +49,13 @@ impl Color {
         self.blue = self.blue.round();
         self
     }
-    
 }
 
 impl PartialEq for Color {
     fn eq(&self, other: &Self) -> bool {
-        float_eq(self.red, other.red) &&
-        float_eq(self.green, other.green) &&
-        float_eq(self.blue, other.blue)
+        float_approx(self.red, other.red, 0.0001) &&
+        float_approx(self.green, other.green, 0.0001) &&
+        float_approx(self.blue, other.blue, 0.0001)
     }
 }
 
@@ -84,6 +103,29 @@ impl Mul<Color> for f64 {
     }
 }
 
+
+impl Mul<f64> for &Color {
+    type Output = Color;
+    fn mul(self, rhs: f64) -> Self::Output {
+        Self::Output {
+            red: self.red * rhs,
+            green: self.green * rhs,
+            blue: self.blue * rhs,
+        }
+    }
+}
+
+impl Mul<&Color> for f64 {
+    type Output = Color;
+    fn mul(self, rhs: &Color) -> Self::Output {
+        Self::Output {
+            red: rhs.red * self,
+            green: rhs.green * self,
+            blue: rhs.blue * self,
+        }
+    }
+}
+
 impl Mul for Color {
     type Output = Color;
     /// Hadamard product (element-wise multiplication)
@@ -95,6 +137,19 @@ impl Mul for Color {
         }
     }
 }
+
+impl Mul for &Color {
+    type Output = Color;
+    /// Hadamard product (element-wise multiplication)
+    fn mul(self, rhs: Self) -> Self::Output {
+        Self::Output {
+            red: self.red * rhs.red,
+            green: self.green * rhs.green,
+            blue: self.blue * rhs.blue,
+        }
+    }
+}
+
 
 pub struct Canvas {
     w: usize,

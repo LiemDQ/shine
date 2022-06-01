@@ -3,7 +3,56 @@ use std::cmp::PartialEq;
 
 use crate::coords::{Vector, Point, Coord};
 use crate::utils::{float_eq, float_approx};
+use crate::transforms::*;
 
+
+pub trait LinAlg {
+    fn get(&self, n: usize, m: usize) -> f64;
+
+    fn set(&mut self, val: f64, n: usize, m: usize);
+
+    fn rows(&self) -> usize;
+
+    fn columns(&self) -> usize;
+
+    fn translation(self, x: f64, y: f64, z: f64) -> <Matrix4 as Mul<Self>>::Output where Self: Sized, Matrix4: Mul<Self> {
+        translation(x, y, z)*self
+    }
+    
+    fn scaling(self, x: f64, y: f64, z: f64) -> <Matrix4 as Mul<Self>>::Output where Self: Sized, Matrix4: Mul<Self> {
+        scaling(x, y, z)*self
+    }
+    
+    fn rotation_x(self, angle: f64) -> <Matrix4 as Mul<Self>>::Output where Self: Sized, Matrix4: Mul<Self> {
+        rotation_x(angle)*self
+    }
+    
+    fn rotation_y(self, angle: f64) -> <Matrix4 as Mul<Self>>::Output where Self: Sized, Matrix4: Mul<Self> {
+        rotation_y(angle)*self
+    }
+    
+    fn rotation_z(self, angle: f64) -> <Matrix4 as Mul<Self>>::Output where Self: Sized, Matrix4: Mul<Self> {
+        rotation_z(angle)*self
+    }
+    
+    fn shearing(self, xy: f64, xz: f64, yx: f64, yz: f64, zx: f64, zy: f64) -> <Matrix4 as Mul<Self>>::Output where Self: Sized, Matrix4: Mul<Self> {
+        shearing(xy, xz, yx, yz, zx, zy)*self
+    }
+
+    fn transpose(self) -> Self;
+
+    fn inverse(&self) -> Option<Self> 
+        where Self: Sized;
+
+    fn is_invertible(&self) -> bool;
+    
+    fn det(&self) -> f64;
+}
+/// Basic matrix implementation. Stores data on the heap and 
+/// can take an arbitrary number of dimensions.
+/// 
+/// TODO: a special implementation for 4x4 matrices with stack storage should be considered
+/// for efficient processing.
 #[derive(Debug, Clone)]
 pub struct Matrix {
     width: usize,
@@ -29,18 +78,6 @@ impl Matrix {
         }
     }
 
-    pub fn get(&self, n: usize, m: usize) -> f64 {
-        self.data[n][m]
-    }
-
-    pub fn rows(&self) -> usize {
-        self.height
-    }
-
-    pub fn columns(&self) -> usize {
-        self.width
-    }
-
     pub fn ident(n: usize, m: usize) -> Self {
         let row = vec![0.0; m];
         let mut mat = vec![row; n];
@@ -57,44 +94,6 @@ impl Matrix {
             height: n,
             data: mat,
         }
-    }
-
-    pub fn transpose(mut self) -> Self {
-        assert_eq!(self.columns(), self.rows());
-        for n in 0..self.rows() {
-            for m in n..(self.columns()) {
-                let temp = self.data[n][m];
-                self.data[n][m] = self.data[m][n];
-                self.data[m][n] = temp;
-            }
-        }
-        self
-    }
-
-    pub fn inverse(&self) -> Option<Self> {
-        if !self.is_invertible() {
-            //not invertible
-            None
-        } else {
-            let mut inv = vec![vec![0.0; self.columns()]; self.rows()];
-            let det = self.det();
-            for n in 0..self.rows() {
-                for m in 0..self.columns() {
-                    inv[m][n] = self.cofactor(n,m)/det;
-                }
-            }
-            Some(Matrix::construct(inv))
-        }
-    }
-
-    pub fn is_invertible(&self) -> bool {
-        !float_eq(self.det(), 0.0) && self.columns() == self.rows()
-    }
-    
-    /// Matrix determinant. Valid only for square matrices.
-    fn det(&self) -> f64 {
-        assert_eq!(self.rows(), self.columns());
-        Matrix::det_helper(self)
     }
 
     fn det_helper(sub: &Matrix) -> f64 {
@@ -145,6 +144,64 @@ impl Matrix {
     }
 }
 
+impl LinAlg for Matrix {
+    fn get(&self, n: usize, m: usize) -> f64 {
+        self.data[n][m]
+    }
+
+    fn set(&mut self, val: f64, n: usize, m: usize) {
+        self.data[n][m] = val;
+    }
+
+    fn rows(&self) -> usize {
+        self.height
+    }
+
+    fn columns(&self) -> usize {
+        self.width
+    }
+
+    fn transpose(mut self) -> Self {
+        assert_eq!(self.columns(), self.rows());
+        for n in 0..self.rows() {
+            for m in n..(self.columns()) {
+                let temp = self.data[n][m];
+                self.data[n][m] = self.data[m][n];
+                self.data[m][n] = temp;
+            }
+        }
+        self
+    }
+
+    fn inverse(&self) -> Option<Self> {
+        if !self.is_invertible() {
+            //not invertible
+            None
+        } else {
+            let mut inv = vec![vec![0.0; self.columns()]; self.rows()];
+            let det = self.det();
+            for n in 0..self.rows() {
+                for m in 0..self.columns() {
+                    inv[m][n] = self.cofactor(n,m)/det;
+                }
+            }
+            Some(Matrix::construct(inv))
+        }
+    }
+
+    fn is_invertible(&self) -> bool {
+        !float_eq(self.det(), 0.0) && self.columns() == self.rows()
+    }
+    
+    /// Matrix determinant. Valid only for square matrices.
+    fn det(&self) -> f64 {
+        assert_eq!(self.rows(), self.columns());
+        Matrix::det_helper(self)
+    }
+
+    
+}
+
 impl PartialEq for Matrix {
     fn eq(&self, other: &Self) -> bool {
         if self.rows() != other.rows() || self.columns() != other.columns() {
@@ -180,6 +237,18 @@ impl Mul for Matrix {
     }
 }
 
+impl Mul<Matrix> for f64 {
+    type Output = Matrix;
+    fn mul(self, rhs: Matrix) -> Self::Output {
+        let new_data = rhs.data
+            .iter()
+            .map(|row| row.iter().map(|f| self*f).collect())
+            .collect();
+        
+        Matrix::construct(new_data)
+    }
+}
+
 impl Mul for &Matrix {
     type Output = Matrix;
     fn mul(self, rhs: &Matrix) -> Self::Output {
@@ -197,9 +266,9 @@ impl Mul for &Matrix {
     }
 }
 
-impl Mul<Vector> for &Matrix {
+impl Mul<&Vector> for &Matrix {
     type Output = Vector;
-    fn mul(self, rhs: Vector) -> Self::Output {
+    fn mul(self, rhs: &Vector) -> Self::Output {
         assert_eq!(self.columns(), 4);
         let mut v = Vector::zero();
         v.x = self.data[0][0]*rhs.x + self.data[0][1]*rhs.y + self.data[0][2]*rhs.z + self.data[0][3]*0.0;
@@ -223,9 +292,9 @@ impl Mul<Vector> for Matrix {
     }
 }
 
-impl Mul<Point> for &Matrix {
+impl Mul<&Point> for &Matrix {
     type Output = Point;
-    fn mul(self, rhs: Point) -> Self::Output {
+    fn mul(self, rhs: &Point) -> Self::Output {
         assert_eq!(self.columns(), 4);
         let mut v = Point::zero();
         v.x = self.data[0][0]*rhs.x + self.data[0][1]*rhs.y + self.data[0][2]*rhs.z + self.data[0][3]*1.0;
@@ -250,6 +319,300 @@ impl Mul<Point> for Matrix {
         v
     }
 }
+
+/// Optimized 4x4 matrix stored on the stack
+#[derive(Debug, Clone, Copy)]
+pub struct Matrix4 {
+    data: [[f64;4]; 4]
+}
+
+impl Matrix4 {
+    const height: usize = 4;
+    const width: usize = 4;
+    pub fn new() -> Self {
+        
+        Self {
+            data: [[0.0;4];4]
+        }
+    }
+
+    pub fn construct(mat: [[f64; 4];4]) -> Self {
+        Self {
+            data: mat
+        }
+    }
+
+    pub fn construct_from_vec(mat: Vec<Vec<f64>>) -> Self {
+        assert_eq!(mat.len(), 4);
+        assert_eq!(mat[0].len(), 4);
+        let mut d = [[0.0;4];4];
+        for (n,row) in mat.iter().enumerate() {
+            for (m, val) in row.iter().enumerate() {
+                d[n][m] = *val;
+            }
+        }
+
+        Self {
+            data: d
+        }
+    }
+
+    pub fn ident() -> Self {
+        let row = [0.0; 4];
+        let mut mat = [row; 4];
+        for n in 0..mat.len() {
+            for m in 0..mat[n].len() {
+                if n == m {
+                    mat[m][n] = 1.0;
+                }
+            }            
+        }
+
+        Self {
+            data: mat,
+        }
+    }
+
+    /// Determinant of a 3x3 submatrix, with row `i` and column `j` excluded.
+    fn det_submatrix3(&self, i: usize, j: usize) -> f64 {
+
+        // set the indices for the submatrix.
+        let r0 = if i > 0 {0} else {1};
+        let r1 = if i == 1 {2} else {r0+1};
+        let r2 = if i == 2 {3} else {r1+1};
+        let c0 = if j > 0 {0} else {1};
+        let c1 = if j == 1 {2} else {c0+1};
+        let c2 = if j == 2 {3} else {c1+1};
+
+        let result = self.data[r0][c0]*(self.data[r1][c1]*self.data[r2][c2]-self.data[r1][c2]*self.data[r2][c1]) 
+        - self.data[r0][c1]*(self.data[r1][c0]*self.data[r2][c2]-self.data[r2][c0]*self.data[r1][c2])
+        + self.data[r0][c2]*(self.data[r1][c0]*self.data[r2][c1]-self.data[r1][c1]*self.data[r2][c0]);
+
+        result
+    }
+
+    fn cofactor(i: usize, j: usize) -> f64 {
+        if (i + j) % 2 == 0 {
+            1.0
+        } else {
+            -1.0
+        }
+    }
+    
+}
+
+impl LinAlg for Matrix4 {
+    fn get(&self, n: usize, m: usize) -> f64 {
+       self.data[n][m] 
+    }
+
+    fn set(&mut self, val: f64, n: usize, m: usize) {
+        self.data[n][m] = val;
+    }
+
+    fn rows(&self) -> usize {
+        Matrix4::height
+    }
+
+    fn columns(&self) -> usize {
+        Matrix4::width
+    }
+
+    /// For a matrix with a known size, we can simply hard-code the equation.
+    /// This saves a significant amount of computation spent performing memory allocations 
+    /// and recursing through the structure.
+    fn det(&self) -> f64 {
+        let mut result = 0.0;
+        for (n, row) in self.data.iter().enumerate() {
+            result += Matrix4::cofactor(n, 0)*row[0]*self.det_submatrix3(n, 0);
+        }
+        result
+    }
+
+    fn is_invertible(&self) -> bool {
+        !float_eq(self.det(), 0.0)
+    }
+
+    fn inverse(&self) -> Option<Self> 
+            where Self: Sized {
+        if !self.is_invertible() {
+            None
+        } else {
+            let mut inv = [[0.0; 4]; 4];
+            let det = self.det();
+            for (n, row) in self.data.iter().enumerate() {
+                for (m,_) in row.iter().enumerate() {
+                    inv[m][n] = Matrix4::cofactor(n,m)*self.det_submatrix3(n, m)/det;
+                }
+            }
+            Some(Matrix4::construct(inv))
+        }
+    }
+
+    fn transpose(mut self) -> Self {
+        for n in 0..self.rows() {
+            for m in n..(self.columns()) {
+                let temp = self.data[n][m];
+                self.data[n][m] = self.data[m][n];
+                self.data[m][n] = temp;
+            }
+        }
+        self
+    }
+}
+
+impl PartialEq for Matrix4 {
+    fn eq(&self, other: &Self) -> bool {
+        if self.rows() != other.rows() || self.columns() != other.columns() {
+            false
+        } else {
+            for n in 0..self.data.len() {
+                for m in 0..self.data[n].len() {
+                    //5 sig figs of tolerance is good enough
+                    if !float_approx(self.data[n][m], other.data[n][m], 0.00001) {
+                        return false;
+                    }
+                 }
+            }
+            true
+        }
+    }
+}
+
+impl Mul for Matrix4 {
+    type Output = Matrix4;
+    fn mul(self, rhs: Self) -> Self::Output {
+        let mut output = Self::Output::new();
+
+        for n in 0..self.rows() {
+            for m in 0..rhs.columns() {
+                for i in 0..self.columns() {
+                    output.data[n][m] += self.data[n][i]*rhs.data[i][m];
+                }
+            }
+        }
+        output
+    }
+}
+
+impl Mul<Matrix4> for f64 {
+    type Output = Matrix4;
+    fn mul(self, rhs: Matrix4) -> Self::Output {
+        let mut new_data = [[0.0;4];4];
+
+        for (n,row) in rhs.data.iter().enumerate() {
+            for (m, val) in row.iter().enumerate() {
+                new_data[n][m] = self*val;
+            }
+        }
+          
+        
+        Matrix4::construct(new_data)
+    }
+}
+
+impl Mul for &Matrix4 {
+    type Output = Matrix4;
+    fn mul(self, rhs: &Matrix4) -> Self::Output {
+        let mut output = Self::Output::new();
+
+        for n in 0..self.rows() {
+            for m in 0..rhs.columns() {
+                for i in 0..self.columns() {
+                    output.data[n][m] += self.data[n][i]*rhs.data[i][m];
+                }
+            }
+        }
+        output
+    }
+}
+
+impl Mul<Matrix4> for Matrix {
+    type Output = Matrix;
+    fn mul(self, rhs: Matrix4) -> Self::Output {
+        assert_eq!(self.columns(), rhs.rows());
+        let mut output = Self::Output::new(self.rows(), rhs.columns());
+
+        for n in 0..self.rows() {
+            for m in 0..rhs.columns() {
+                for i in 0..self.columns() {
+                    output.data[n][m] += self.data[n][i]*rhs.data[i][m];
+                }
+            }
+        }
+        output
+    }
+    
+}
+
+impl Mul<Matrix> for Matrix4 {
+    type Output = Matrix;
+    fn mul(self, rhs: Matrix) -> Self::Output {
+        assert_eq!(self.columns(), rhs.rows());
+        let mut output = Self::Output::new(self.rows(), rhs.columns());
+
+        for n in 0..self.rows() {
+            for m in 0..rhs.columns() {
+                for i in 0..self.columns() {
+                    output.data[n][m] += self.data[n][i]*rhs.data[i][m];
+                }
+            }
+        }
+        output
+    }
+
+}
+
+impl Mul<&Vector> for &Matrix4 {
+    type Output = Vector;
+    fn mul(self, rhs: &Vector) -> Self::Output {
+        let mut v = Vector::zero();
+        v.x = self.data[0][0]*rhs.x + self.data[0][1]*rhs.y + self.data[0][2]*rhs.z + self.data[0][3]*0.0;
+        v.y = self.data[1][0]*rhs.x + self.data[1][1]*rhs.y + self.data[1][2]*rhs.z + self.data[1][3]*0.0;
+        v.z = self.data[2][0]*rhs.x + self.data[2][1]*rhs.y + self.data[2][2]*rhs.z + self.data[2][3]*0.0;
+        //no modification of last row
+        v
+    }
+}
+
+impl Mul<Vector> for Matrix4 {
+    type Output = Vector;
+    fn mul(self, rhs: Vector) -> Self::Output {
+        let mut v = Vector::zero();
+        v.x = self.data[0][0]*rhs.x + self.data[0][1]*rhs.y + self.data[0][2]*rhs.z + self.data[0][3]*0.0;
+        v.y = self.data[1][0]*rhs.x + self.data[1][1]*rhs.y + self.data[1][2]*rhs.z + self.data[1][3]*0.0;
+        v.z = self.data[2][0]*rhs.x + self.data[2][1]*rhs.y + self.data[2][2]*rhs.z + self.data[2][3]*0.0;
+        //no modification of last row
+        v
+    }
+}
+
+impl Mul<&Point> for &Matrix4 {
+    type Output = Point;
+    fn mul(self, rhs: &Point) -> Self::Output {
+        let mut v = Point::zero();
+        v.x = self.data[0][0]*rhs.x + self.data[0][1]*rhs.y + self.data[0][2]*rhs.z + self.data[0][3]*1.0;
+        v.y = self.data[1][0]*rhs.x + self.data[1][1]*rhs.y + self.data[1][2]*rhs.z + self.data[1][3]*1.0;
+        v.z = self.data[2][0]*rhs.x + self.data[2][1]*rhs.y + self.data[2][2]*rhs.z + self.data[2][3]*1.0;
+        assert_eq!(self.data[3].iter().sum::<f64>(), 1.0);
+        //no modification of last row
+        v
+    }
+}
+
+impl Mul<Point> for Matrix4 {
+    type Output = Point;
+    fn mul(self, rhs: Point) -> Self::Output {
+        let mut v = Point::zero();
+        v.x = self.data[0][0]*rhs.x + self.data[0][1]*rhs.y + self.data[0][2]*rhs.z + self.data[0][3]*1.0;
+        v.y = self.data[1][0]*rhs.x + self.data[1][1]*rhs.y + self.data[1][2]*rhs.z + self.data[1][3]*1.0;
+        v.z = self.data[2][0]*rhs.x + self.data[2][1]*rhs.y + self.data[2][2]*rhs.z + self.data[2][3]*1.0;
+        assert_eq!(self.data[3].iter().sum::<f64>(), 1.0);
+        //no modification of last row
+        v
+    }
+}
+
 
 #[test]
 fn construct_matrix(){
@@ -588,5 +951,153 @@ fn inverse_multiplied_by_product(){
     let m2 = Matrix::construct(d2);
 
     let c = &m1*&m2;
+    assert_eq!(c*m2.inverse().unwrap(), m1);
+}
+
+
+#[test]
+fn determinant_submatrix_matrix4(){
+    let d1 = [
+        [-2., -8., 3., 5.],
+        [-3., 1., 7., 3.],
+        [ 1., 2., -9., 6.],
+        [-6., 7., 7., -9.]
+    ];
+
+    let m = Matrix4::construct(d1);
+    assert_eq!(m.det_submatrix3(0, 0), 690.);
+}
+
+#[test]
+fn determinant_4x4_matrix4() {
+    let d1 = [
+        [-2., -8., 3., 5.],
+        [-3., 1., 7., 3.],
+        [ 1., 2., -9., 6.],
+        [-6., 7., 7., -9.]
+    ];
+
+    let m = Matrix4::construct(d1);
+    assert!(float_eq(m.det(), -4071.));
+}
+
+#[test]
+fn invertible_4x4_matrix4(){
+    let d1 = [
+        [6., 4., 4., 4.],
+        [5., 5., 7., 6.],
+        [4., -9., 3., -7.],
+        [9., 1., 7., -6.]
+    ];
+    let m1 = Matrix4::construct(d1);
+
+    let d2 = [
+        [-4., 2., -2., -3.],
+        [9., 6., 2., 6.],
+        [ 0., -5., 1., -5.],
+        [0., 0., 0., 0.]
+    ];
+
+    let m2 = Matrix4::construct(d2);
+    
+    assert!(m1.is_invertible());
+    assert!(!m2.is_invertible());
+}
+
+#[test]
+fn invert_4x4_matrix4() {
+    let d1 = [
+        [-5., 2., 6., -8.],
+        [1., -5., 1., 8.],
+        [ 7., 7., -6., -7.],
+        [1.,-3., 7., 4.]
+    ];
+
+    let m1 = Matrix4::construct(d1);
+
+    assert_eq!(m1.det(), 532.);
+    let inv = m1.inverse().unwrap();
+    assert!(float_eq(inv.get(3,2), -160./532.));
+
+    let d2 = [
+        [ 0.21805, 0.45113, 0.24060,-0.04511],
+        [-0.80827,-1.45677,-0.44361, 0.52068],
+        [-0.07895,-0.22368,-0.05263, 0.19737],
+        [-0.52256,-0.81391,-0.30075, 0.30639],
+    ];
+
+    let m2 = Matrix4::construct(d2);
+    assert_eq!(m2, inv);
+}
+
+#[test]
+fn invert_4x4_2_matrix4() {
+    let d1 = [
+        [ 8. , -5., 9., 2. ],
+        [ 7. , 5., 6., 1. ],
+        [ -6. , 0., 9., 6. ],
+        [ -3. , 0., -9., -4. ],
+    ];
+
+    let m1 = Matrix4::construct(d1);
+    let d2 = [
+        [ -0.15385 , -0.15385 , -0.28205 , -0.53846 ],
+        [ -0.07692 , 0.12308 , 0.02564 , 0.03077 ],
+        [ 0.35897 , 0.35897 , 0.43590 , 0.92308 ],
+        [ -0.69231 , -0.69231 , -0.76923 , -1.92308 ],
+    ];
+
+    let m2 = Matrix4::construct(d2);
+
+    let inv = m1.inverse().unwrap();
+    assert_eq!(inv, m2);
+}
+
+
+#[test]
+fn invert_4x4_3_matrix4(){
+    let d1 = [
+        [ 9. , 3. , 0. , 9. ],
+        [ -5. , -2. , -6. , -3. ],
+        [ -4. , 9. , 6. , 4. ],
+        [ -7. , 6. , 6. , 2. ],
+    ];
+
+    let m1 = Matrix4::construct(d1);
+
+    let d2 = [
+        [ -0.04074 , -0.07778 , 0.14444 , -0.22222 ],
+        [ -0.07778 , 0.03333 , 0.36667 , -0.33333 ],
+        [ -0.02901 , -0.14630 , -0.10926 , 0.12963 ],
+        [ 0.17778 , 0.06667 , -0.26667 , 0.33333 ],
+    ];
+
+    let m2 = Matrix4::construct(d2);
+
+    let inv = m1.inverse().unwrap();
+    assert_eq!(inv, m2);
+}
+
+#[test]
+fn inverse_multiplied_by_product_matrix4(){
+    let d1 = [
+        [ 3., -9. , 7., 3.],
+        [ 3., -8. , 2., -9.],
+        [ -4., 4. , 4., 1.],
+        [ -6., 5. , -1., 1.],
+    ];
+
+    let m1 = Matrix4::construct(d1);
+
+    let d2 = [
+        [8.,  2., 2., 2.],
+        [3.,  -1., 7., 0.],
+        [7.,  0., 5., 4.],
+        [6.,  -2., 0., 5.],
+    ];
+
+    let m2 = Matrix4::construct(d2);
+
+    let c = m1*m2;
     assert_eq!(c*m2.inverse().unwrap(), m1);
 }

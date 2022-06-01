@@ -31,6 +31,10 @@ impl Vector {
         let mag = self.magnitude();
         Self { x: self.x/mag, y: self.y/mag, z: self.z/mag}
     }
+
+    pub fn reflect(&self, normal: &Vector) -> Vector {
+        self - &((2.0*(self*normal)) * normal)
+    }
 }
 
 impl Coord for Vector {
@@ -74,6 +78,17 @@ impl Sub for Vector {
     }
 }
 
+impl Sub for &Vector {
+    type Output = Vector;
+    fn sub(self, rhs: Self) -> Self::Output {
+        Self::Output {
+            x: self.x - rhs.x,
+            y: self.y - rhs.y,
+            z: self.z - rhs.z,
+        }
+    }
+}
+
 impl Neg for Vector {
     type Output = Self;
     fn neg(self) -> Self::Output {
@@ -105,9 +120,30 @@ impl Mul<Vector> for Vector {
     }
 }
 
+impl Mul<&Vector> for &Vector {
+    type Output = f64;
+    fn mul(self, rhs: &Vector) -> Self::Output {
+        self.x * rhs.x +
+        self.y * rhs.y +
+        self.z * rhs.z
+    }
+}
+
+
 impl Mul<Vector> for f64 {
     type Output = Vector;
     fn mul(self, rhs: Vector) -> Self::Output {
+        Self::Output {
+            x: self * rhs.x,
+            y: self * rhs.y,
+            z: self * rhs.z,
+        }
+    }
+}
+
+impl Mul<&Vector> for f64 {
+    type Output = Vector;
+    fn mul(self, rhs: &Vector) -> Self::Output {
         Self::Output {
             x: self * rhs.x,
             y: self * rhs.y,
@@ -129,9 +165,9 @@ impl Div<f64> for Vector {
 
 impl PartialEq for Vector {
     fn eq (&self, other: &Self) -> bool {
-        f64::abs(self.x - other.x) < f64::EPSILON &&
-        f64::abs(self.y - other.y) < f64::EPSILON &&
-        f64::abs(self.z - other.z) < f64::EPSILON
+        f64::abs(self.x - other.x) < 0.00001 &&
+        f64::abs(self.y - other.y) < 0.00001 &&
+        f64::abs(self.z - other.z) < 0.00001
     }
 }
 
@@ -168,9 +204,9 @@ impl Coord for Point {
 
 impl PartialEq for Point {
     fn eq (&self, other: &Self) -> bool {
-        f64::abs(self.x - other.x) < f64::EPSILON &&
-        f64::abs(self.y - other.y) < f64::EPSILON &&
-        f64::abs(self.z - other.z) < f64::EPSILON
+        f64::abs(self.x - other.x) < 0.00001 &&
+        f64::abs(self.y - other.y) < 0.00001 &&
+        f64::abs(self.z - other.z) < 0.00001
     }
 }
 
@@ -199,6 +235,18 @@ impl Sub<Vector> for Point {
 impl Sub<Point> for Point {
     type Output = Vector;
     fn sub(self, rhs: Point) -> Self::Output {
+        Self::Output {
+            x: self.x - rhs.x,
+            y: self.y - rhs.y,
+            z: self.z - rhs.z,
+        }
+    }
+}
+
+
+impl Sub<&Point> for &Point {
+    type Output = Vector;
+    fn sub(self, rhs: &Point) -> Self::Output {
         Self::Output {
             x: self.x - rhs.x,
             y: self.y - rhs.y,
@@ -311,4 +359,20 @@ fn cross_product_vec() {
     assert_eq!(cross(v1.clone(), v2.clone()), Vector::new(-1., 2., -1.));
     assert_eq!(cross(v2, v1), Vector::new(1., -2., 1.));
     
+}
+
+#[test]
+fn reflect_vector_at_45_deg() {
+    let v = Vector::new(1., -1., 0.);
+    let n = Vector::new(0., 1. ,0.);
+    let r = v.reflect(&n);
+    assert_eq!(r, Vector::new(1., 1., 0.));
+}
+
+#[test]
+fn reflect_vector_off_slanted_surface(){
+    let v = Vector::new(0., -1., 0.);
+    let n = Vector::new(f64::sqrt(2.0)/2.0, f64::sqrt(2.0)/2.0 ,0.);
+    let r = v.reflect(&n);
+    assert_eq!(r, Vector::new(1., 0., 0.));
 }
