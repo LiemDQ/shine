@@ -4,7 +4,7 @@ use crate::utils::{float_eq, float_approx};
 
 const MAX_PPM_LINE_WIDTH : usize = 70;
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Copy)]
 pub struct Color {
     pub red: f64,
     pub green: f64,

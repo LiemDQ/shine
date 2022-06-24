@@ -14,32 +14,12 @@ use geometry::Sphere;
 use std::{fs, io};
 use matrix::{Matrix, Matrix4, LinAlg};
 use transforms::*;
-
+use world::*;
 use ray::{Ray, Intersection, hit, lighting};
 
 use crate::{ray::PointLight, canvas::Color};
 
 const CANVAS_DIM: usize = 1000;
-
-struct Projectile {
-    pub position: Point,
-    pub velocity: Vector,
-}
-
-struct Environment {
-    pub gravity: Vector,
-    pub wind: Vector,
-}
-
-fn tick(envir: &Environment, proj: &mut Projectile){
-    proj.position = proj.position + proj.velocity;
-    proj.velocity = proj.velocity + envir.gravity + envir.wind;
-}
-
-fn imprint_proj_on_canvas(canvas: &mut Canvas, proj: &Projectile) {
-    const PX: Pixel = Pixel::new(1.0, 0., 0.);
-    canvas.write_pixel(proj.position.x as usize, canvas.height() - proj.position.y as usize - 1, PX);
-}
 
 fn draw_point_on_canvas(canvas: &mut Canvas, pt: &Point) {
     const PX: Pixel = Pixel::new(1.0, 1.0, 1.0);
@@ -48,45 +28,63 @@ fn draw_point_on_canvas(canvas: &mut Canvas, pt: &Point) {
 
 
 fn main() -> io::Result<()> {
+    use std::f64::consts::PI;
+    let mut floor = Sphere::new(1);
+    floor.set_transform(scaling(10., 0.01, 10.));
+    floor.material.color = Color::new(1., 0.9, 0.9);
+    floor.material.specular = 0.;
 
-    const RED: Pixel = Pixel::new(1.0, 0., 0.);
-    const PINK: Pixel = Pixel::new(1.0, 0.2, 1.);
+    let mut left_wall = Sphere::new(2);
+    left_wall.set_transform(
+        translation(0., 0., 5.)*rotation_y(-PI/4.0)
+        *rotation_x(PI/2.0)*scaling(10., 0.01, 10.)
+    );
+    left_wall.material = floor.material;
 
-    let mut canvas = Canvas::new(CANVAS_DIM,CANVAS_DIM);
-    let origin = Point::new(0., 0., -5.);
-    let wall_z = 10.0;
-    let wall_size = 7.0;
-    let pixel_size = wall_size/(CANVAS_DIM as f64);
-    let half = wall_size / 2.0;
-    let mut shape = Sphere::new(1);
-    shape.material.color = PINK;
+    let mut right_wall = Sphere::new(3);
+    right_wall.set_transform(
+        translation(0., 0., 5.)*rotation_y(PI/4.0)
+        *rotation_x(PI/2.0)*scaling(10., 0.01, 10.)
+    );
+    right_wall.material = floor.material;
 
-    //shape.set_transform(scaling(1., 0.5, 1.));
+    let mut middle = Sphere::new(4);
+    middle.set_transform(
+        translation(-0.5, 1., 0.5)
+    );
+    middle.material.color = Color::new(0.1, 1., 0.5);
+    middle.material.diffuse = 0.4;
+    middle.material.specular = 1.2;
 
-    //add a light source.
-    let light = PointLight::new(Point::new(0., -10., 0.), Color::white());
+    let mut right = Sphere::new(5);
+    right.set_transform(
+        translation(1.5, 0.5, -0.5)*scaling(0.5, 0.5, 0.5)
+    );
+    right.material.color = Color::new(0.5, 1.0, 0.1);
+    right.material.diffuse = 0.7;
+    right.material.specular = 0.7;
 
-    for y in 0..CANVAS_DIM {
-        //y coordinate of world, with the top = +half and bottom = -half
-        let world_y = half - pixel_size*(y as f64);
-        
-        for x in 0..CANVAS_DIM {
-            //x coordinate of world, from left to right
-            let world_x = -half + pixel_size*(x as f64);
-            let target = Point::new(world_x, world_y, wall_z);
-            let r = Ray::new(origin.clone(), (target-origin).normalize());
-            let xs = shape.intersect(&r);
-            if let Some(inter) = hit(&xs) {
-                let point = r.position(inter.t);
-                let normal = inter.object.normal_at(&point);
-                let eye = -r.direction;
-                let color = lighting(&inter.object.material,  &point, &light, &eye, &normal);
-                canvas.write_pixel(x, y, color);
-            }
-        }
+    let mut left = Sphere::new(6);
+    left.set_transform(
+        translation(-1.5, 0.33, -0.75)*scaling(0.33, 0.33, 0.33)
+    );
+    left.material.diffuse = 0.7;
+    left.material.specular = 0.3;
 
-    }
+    let world = World{
+        objects: vec![floor, left_wall, right_wall, middle, right, left],
+        lights: vec![PointLight::new(Point::new(-10., 10., -10.), Color::new(1., 1., 1.))],
+    };
 
-    fs::write("sphere_lit.ppm", canvas.to_ppm())?;
+    let mut camera = Camera::new(1000, 500, PI/3.0);
+    camera.transform = view_transform(
+        Point::new(0., 1.5, -5.), 
+        Point::new(0., 1., 0.),
+        Vector::new(0., 1., 0.)
+    );
+
+    let canvas = camera.render(&world);
+
+    fs::write("sphere_scene.ppm", canvas.to_ppm())?;
     Ok(())
 }

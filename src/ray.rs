@@ -81,7 +81,7 @@ impl PointLight {
 /// - Diffuse
 /// - Specular
 /// - Shininess
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct Material {
     pub color: Color,
     pub ambient: f64,
@@ -99,6 +99,12 @@ impl Default for Material {
             specular: 0.9, 
             shininess: 200.0 
         }
+    }
+}
+
+impl Material {
+    pub fn new(color: Color, ambient: f64, diffuse: f64, specular: f64, shininess: f64) -> Self {
+        Self { color, ambient, diffuse, specular, shininess }
     }
 }
 
@@ -136,6 +142,34 @@ pub fn lighting(material: &Material, pt: &Point, light: &PointLight, eyev: &Vect
         }
     }
     ambient + diffuse + specular
+}
+
+pub struct Computations {
+    pub t: f64,
+    pub object: Sphere,
+    pub point: Point,
+    pub eyev: Vector,
+    pub normalv: Vector,
+    pub inside: bool,
+}
+
+pub fn prepare_computations(intersection: &Intersection, ray: &Ray) -> Computations {
+    let point = ray.position(intersection.t);
+    let mut normalv = intersection.object.normal_at(&point);
+    let inside = if normalv * -ray.direction < 0.0 {
+        normalv = -normalv;
+        true
+    } else {
+        false
+    };
+    Computations { 
+        t: intersection.t, 
+        object: intersection.object.clone(), 
+        point: point, 
+        eyev: -ray.direction, 
+        normalv: normalv,
+        inside: inside
+    }
 }
 
 #[test]
@@ -370,4 +404,40 @@ fn lighting_with_light_behind_surface(){
     
     //only ambient lighting is left
     assert_eq!(result, Color::new(0.1, 0.1, 0.1));
+}
+
+#[test]
+fn precompute_state_of_intersection(){
+    let r = Ray::new(Point::new(0., 0., -5.), Vector::new(0., 0., 1.));
+    let shape = Sphere::new(1);
+    let i = Intersection {t: 4., object: &shape};
+    let comps = prepare_computations(&i, &r);
+    assert_eq!(comps.t, i.t);
+    assert_eq!(comps.point, Point::new(0., 0., -1.));
+    assert_eq!(comps.normalv, Vector::new(0., 0., -1.));
+}
+
+#[test]
+fn precompute_state_of_intersection_outside(){
+    let r = Ray::new(Point::new(0., 0., -5.), Vector::new(0., 0., 1.));
+    let shape = Sphere::new(1);
+    let i = Intersection {t: 4., object: &shape};
+    let comps = prepare_computations(&i, &r);
+    assert_eq!(comps.t, i.t);
+    assert_eq!(comps.point, Point::new(0., 0., -1.));
+    assert_eq!(comps.normalv, Vector::new(0., 0., -1.));
+    assert_eq!(comps.inside, false);
+}
+
+#[test]
+fn precompute_state_of_intersection_inside(){
+    let r = Ray::new(Point::new(0., 0., 0.), Vector::new(0., 0., 1.));
+    let shape = Sphere::new(1);
+    let i = Intersection {t: 1., object: &shape};
+    let comps = prepare_computations(&i, &r);
+    assert_eq!(comps.t, i.t);
+    assert_eq!(comps.point, Point::new(0., 0., 1.));
+    assert_eq!(comps.eyev, Vector::new(0., 0., -1.));
+    assert_eq!(comps.normalv, Vector::new(0., 0., -1.));
+    assert_eq!(comps.inside, true)
 }

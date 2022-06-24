@@ -261,7 +261,7 @@ fn dot(lhs: Vector, rhs: Vector) -> f64 {
 }
 
 
-fn cross(lhs: Vector, rhs: Vector) -> Vector {
+pub fn cross(lhs: Vector, rhs: Vector) -> Vector {
     Vector::new(lhs.y * rhs.z - lhs.z * rhs.y, lhs.z * rhs.x - lhs.x * rhs.z, lhs.x *rhs.y - lhs.y*rhs.x)
 }
 

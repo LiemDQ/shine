@@ -609,7 +609,7 @@ impl Mul<Point> for Matrix4 {
         v.x = self.data[0][0]*rhs.x + self.data[0][1]*rhs.y + self.data[0][2]*rhs.z + self.data[0][3]*1.0;
         v.y = self.data[1][0]*rhs.x + self.data[1][1]*rhs.y + self.data[1][2]*rhs.z + self.data[1][3]*1.0;
         v.z = self.data[2][0]*rhs.x + self.data[2][1]*rhs.y + self.data[2][2]*rhs.z + self.data[2][3]*1.0;
-        assert_eq!(self.data[3].iter().sum::<f64>(), 1.0);
+        // assert_eq!(self.data[3].iter().sum::<f64>(), 1.0);
         //no modification of last row
         v
     }
