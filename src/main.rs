@@ -9,23 +9,12 @@ mod geometry;
 mod world;
 
 use coords::{Point, Vector, Coord};
-use canvas::{Canvas, Pixel};
 use geometry::Sphere;
 use std::{fs, io};
-use matrix::{Matrix, Matrix4, LinAlg};
 use transforms::*;
 use world::*;
-use ray::{Ray, Intersection, hit, lighting};
 
 use crate::{ray::PointLight, canvas::Color};
-
-const CANVAS_DIM: usize = 1000;
-
-fn draw_point_on_canvas(canvas: &mut Canvas, pt: &Point) {
-    const PX: Pixel = Pixel::new(1.0, 1.0, 1.0);
-    canvas.write_pixel((pt.x as i64 + CANVAS_DIM as i64/2 ) as usize, (pt.y as i64 + CANVAS_DIM as i64/2 ) as usize, PX);
-}
-
 
 fn main() -> io::Result<()> {
     use std::f64::consts::PI;
@@ -53,8 +42,8 @@ fn main() -> io::Result<()> {
         translation(-0.5, 1., 0.5)
     );
     middle.material.color = Color::new(0.1, 1., 0.5);
-    middle.material.diffuse = 0.4;
-    middle.material.specular = 1.2;
+    middle.material.diffuse = 0.7;
+    middle.material.specular = 0.3;
 
     let mut right = Sphere::new(5);
     right.set_transform(
@@ -62,7 +51,7 @@ fn main() -> io::Result<()> {
     );
     right.material.color = Color::new(0.5, 1.0, 0.1);
     right.material.diffuse = 0.7;
-    right.material.specular = 0.7;
+    right.material.specular = 0.3;
 
     let mut left = Sphere::new(6);
     left.set_transform(
@@ -85,6 +74,6 @@ fn main() -> io::Result<()> {
 
     let canvas = camera.render(&world);
 
-    fs::write("sphere_scene.ppm", canvas.to_ppm())?;
+    fs::write("sphere_scene_shadowed.ppm", canvas.to_ppm())?;
     Ok(())
 }
