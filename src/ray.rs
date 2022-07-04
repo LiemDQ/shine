@@ -1,4 +1,7 @@
 
+use std::fmt::Debug;
+
+use crate::matrix::{LinAlg};
 use crate::{canvas::Color, matrix::Matrix4};
 use crate::coords::*;
 use crate::geometry::{Sphere, Shape};
@@ -75,49 +78,220 @@ impl PointLight {
     }
 }
 
+pub trait Pattern: Debug {
+    fn at(&self, pt: &Point) -> Color;
+    fn transform(&self) -> Matrix4;
+    fn set_transform(&mut self, t: Matrix4);
+    fn at_object(&self, object: &dyn Shape, pt: &Point) -> Color {
+        let object_pt = &object.transform().inverse().unwrap() * pt;
+        let pattern_pt = self.transform().inverse().unwrap()* object_pt;
+        self.at(&pattern_pt)
+    }
+}
+
+#[derive(Debug, Copy, Clone)]
+pub struct SolidPattern {
+    a: Color,
+}
+
+impl SolidPattern {
+    pub fn new(a: Color) -> Box<Self> {
+        Box::new(Self {a})
+    }
+}
+
+impl Pattern for SolidPattern {
+    fn at(&self, _: &Point) -> Color {
+        self.a
+    }
+
+    fn transform(&self) -> Matrix4 {
+        Matrix4::ident()
+    }
+
+    fn set_transform(&mut self, _: Matrix4) {
+        //noop
+    }
+
+}
+
+#[derive(Debug, Copy, Clone)]
+pub struct StripePattern {
+    a: Color,
+    b: Color,
+    transform: Matrix4
+}
+
+
+impl StripePattern {
+    pub fn new(a: Color, b: Color) -> Box<Self> { 
+        Box::new(Self { a, b, transform: Matrix4::ident() })
+    }
+
+    fn color(&self, pt: &Point) -> Color {
+        if pt.x.floor() as i64 % 2 == 0 {
+            self.a
+        } else {
+            self.b
+        }
+    }
+}
+
+impl Pattern for StripePattern {
+    fn at(&self, pt: &Point) -> Color {
+        self.color(pt)
+    }
+
+    fn transform(&self) -> Matrix4 {
+        self.transform
+    }
+
+    fn set_transform(&mut self, t: Matrix4) {
+        self.transform = t;
+    }
+}
+
+#[derive(Debug, Copy, Clone)]
+pub struct GradientPattern {
+    a: Color,
+    b: Color,
+    transform: Matrix4
+}
+
+impl GradientPattern {
+    pub fn new(a: Color, b: Color) -> Box<Self> {
+        Box::new(Self { a, b, transform: Matrix4::ident() })
+    }
+}
+
+impl Pattern for GradientPattern {
+    fn set_transform(&mut self, t: Matrix4) {
+        self.transform = t;
+    }
+    
+    fn transform(&self) -> Matrix4 {
+        self.transform
+    }
+
+    fn at(&self, pt: &Point) -> Color {
+        self.a + (self.b - self.a) * (pt.x - pt.x.floor())
+    }
+} 
+
+#[derive(Debug, Copy, Clone)]
+pub struct RingPattern {
+    a: Color,
+    b: Color,
+    transform: Matrix4
+}
+
+impl RingPattern {
+    pub fn new(a: Color, b: Color) -> Box<Self> {
+        Box::new(Self { a, b, transform: Matrix4::ident() })
+    }
+}
+
+impl Pattern for RingPattern {
+    fn set_transform(&mut self, t: Matrix4) {
+        self.transform = t;
+    }
+    
+    fn transform(&self) -> Matrix4 {
+        self.transform
+    }
+
+    fn at(&self, pt: &Point) -> Color {
+        if f64::sqrt(pt.x*pt.x + pt.z*pt.z).floor() as i64 % 2 == 0 {
+            self.a
+        } else {
+            self.b
+        }
+    }
+} 
+
+
+#[derive(Debug, Copy, Clone)]
+pub struct CheckerPattern {
+    a: Color,
+    b: Color,
+    transform: Matrix4
+}
+
+impl CheckerPattern {
+    pub fn new(a: Color, b: Color) -> Box<Self> {
+        Box::new(Self { a, b, transform: Matrix4::ident() })
+    }
+}
+
+impl Pattern for CheckerPattern {
+    fn set_transform(&mut self, t: Matrix4) {
+        self.transform = t;
+    }
+    
+    fn transform(&self) -> Matrix4 {
+        self.transform
+    }
+
+    fn at(&self, pt: &Point) -> Color {
+        if (pt.x.floor() + pt.y.floor() + pt.z.floor()) as i64 % 2 == 0 {
+            self.a
+        } else {
+            self.b
+        }
+    }
+} 
+
+
+
 /// Attributes for the Phong reflection model:
 /// - Ambient
 /// - Diffuse
 /// - Specular
 /// - Shininess
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug)]
 pub struct Material {
-    pub color: Color,
     pub ambient: f64,
     pub diffuse: f64,
     pub specular: f64,
     pub shininess: f64,
+    pub pattern: Box<dyn Pattern>,
 }
 
 impl Default for Material {
     fn default() -> Self {
         Self { 
-            color: Color::new(1., 1., 1.), 
             ambient: 0.1, 
             diffuse: 0.9, 
             specular: 0.9, 
-            shininess: 200.0 
+            shininess: 200.0 ,
+            pattern: SolidPattern::new(Color::new(1., 1., 1.))
         }
     }
 }
 
 impl Material {
-    pub fn new(color: Color, ambient: f64, diffuse: f64, specular: f64, shininess: f64) -> Self {
-        Self { color, ambient, diffuse, specular, shininess }
+    pub fn new(ambient: f64, diffuse: f64, specular: f64, shininess: f64, pattern: Box<dyn Pattern> ) -> Self {
+        Self { ambient, diffuse, specular, shininess, pattern }
+    }
+
+    pub fn color(&self, object: &dyn Shape, pt: &Point) -> Color {
+        self.pattern.at_object(object, pt)
     }
 }
 
 /// Compute a lighting value for a surface from the perspective of an observer (the 'eye') 
 /// using the Phong reflection model.
 pub fn lighting(
-    material: &Material, 
-    pt: &Point, 
-    light: &PointLight, 
-    eyev: &Vector, 
-    normalv: &Vector, 
-    in_shadow: bool) -> Color {
+    material: &Material,  //object material
+    object: &dyn Shape,
+    pt: &Point, //point on the object that the light hits
+    light: &PointLight, //light used to shine
+    eyev: &Vector, //position of eye
+    normalv: &Vector, //normal vector of surface of object
+    in_shadow: bool //whether or not the surface is occluded 
+) -> Color { 
     //combine the surface color with the light's color/intensity
-    let effective_color = &material.color * &light.intensity;
+    let effective_color = &material.color(object, pt) * &light.intensity;
     
     //find direction to the light source
     let lightv = (&light.position - pt).normalize();
@@ -358,7 +532,8 @@ mod test {
         let eyev = Vector::new(0., 0., -1.);
         let normalv = Vector::new(0., 0., -1.);
         let light = PointLight::new(Point::new(0., 0., -10.0), Color::white());
-        let result = lighting(&m, &p, &light, &eyev, &normalv, false);
+        let sphere = Sphere::new(0);
+        let result = lighting(&m, &sphere, &p, &light, &eyev, &normalv, false);
         assert_eq!(result, Color::new(1.9, 1.9, 1.9));
     }
     
@@ -371,7 +546,8 @@ mod test {
         let eyev = Vector::new(0., f64::sqrt(2.0)/2.0, -f64::sqrt(2.0)/2.0);
         let normalv = Vector::new(0., 0., -1.);
         let light = PointLight::new(Point::new(0., 0., -10.0), Color::white());
-        let result = lighting(&m, &p, &light, &eyev, &normalv, false);
+        let sphere = Sphere::new(0);
+        let result = lighting(&m, &sphere, &p, &light, &eyev, &normalv, false);
         //specular value should be effectively zero
         assert_eq!(result, Color::new(1.0, 1.0, 1.0));
     }
@@ -385,7 +561,8 @@ mod test {
         let eyev = Vector::new(0., 0.0, -1.);
         let normalv = Vector::new(0., 0., -1.);
         let light = PointLight::new(Point::new(0., 10., -10.0), Color::white());
-        let result = lighting(&m, &p, &light, &eyev, &normalv, false);
+        let sphere = Sphere::new(0);
+        let result = lighting(&m, &sphere, &p, &light, &eyev, &normalv, false);
         //diffuse value is reduced
         //no specular component
         
@@ -401,7 +578,8 @@ mod test {
         let eyev = Vector::new(0., -f64::sqrt(2.0)/2.0, -f64::sqrt(2.0)/2.0);
         let normalv = Vector::new(0., 0., -1.);
         let light = PointLight::new(Point::new(0., 10., -10.0), Color::white());
-        let result = lighting(&m, &p, &light, &eyev, &normalv, false);
+        let sphere = Sphere::new(0);
+        let result = lighting(&m, &sphere, &p, &light, &eyev, &normalv, false);
         
         //specular lighting is at full strength, with diffuse and ambient lighting the same as the previous test
         assert_eq!(result, Color::new(1.6364, 1.6364, 1.6364));
@@ -416,7 +594,8 @@ mod test {
         let eyev = Vector::new(0., 0., -1.);
         let normalv = Vector::new(0., 0., -1.);
         let light = PointLight::new(Point::new(0., 10., 10.0), Color::white());
-        let result = lighting(&m, &p, &light, &eyev, &normalv, false);
+        let sphere = Sphere::new(0);
+        let result = lighting(&m, &sphere, &p, &light, &eyev, &normalv, false);
         
         //only ambient lighting is left
         assert_eq!(result, Color::new(0.1, 0.1, 0.1));
@@ -430,7 +609,8 @@ mod test {
         let normalv = Vector::new(0., 0., -1.);
         let light = PointLight::new(Point::new(0., 0., -10.), Color::new(1., 1., 1.));
         let in_shadow = true;
-        let result = lighting(&m, &pt, &light, &eyev, &normalv, in_shadow);
+        let sphere = Sphere::new(0);
+        let result = lighting(&m, &sphere, &pt, &light, &eyev, &normalv, in_shadow);
         assert_eq!(result, Color::new(0.1, 0.1, 0.1));
     }
     
@@ -479,5 +659,109 @@ mod test {
         let comps = prepare_computations(&i, &r);
         assert!(comps.over_point.z < -0.00001/2.);
         assert!(comps.point.z > comps.over_point.z );
+    }
+
+    use crate::coords::Coord;
+
+    use super::*;
+    #[test]
+    fn stripe_pattern_constant_in_y(){
+        let pattern = StripePattern::new(Color::white(), Color::black());
+        assert_eq!(pattern.at(&Point::new(0.0, 0.0, 0.0)), Color::white());
+        assert_eq!(pattern.at(&Point::new(0.0, 1.0, 0.0)), Color::white());
+        assert_eq!(pattern.at(&Point::new(0.0, 2.0, 0.0)), Color::white());
+    }
+
+    #[test]
+    fn stripe_pattern_constant_in_z(){
+        let pattern = StripePattern::new(Color::white(), Color::black());
+        assert_eq!(pattern.at(&Point::new(0.0, 0.0, 0.0)), Color::white());
+        assert_eq!(pattern.at(&Point::new(0.0, 0.0, 1.0)), Color::white());
+        assert_eq!(pattern.at(&Point::new(0.0, 0.0, 2.0)), Color::white());
+    }
+
+    
+    #[test]
+    fn stripe_pattern_alternates_in_x(){
+        let pattern = StripePattern::new(Color::white(), Color::black());
+        assert_eq!(pattern.at(&Point::new(0.0, 0.0, 0.0)), Color::white());
+        assert_eq!(pattern.at(&Point::new(1.0, 0.0, 0.0)), Color::black());
+        assert_eq!(pattern.at(&Point::new(2.0, 0.0, 0.0)), Color::white());
+    }
+
+    #[test]
+    fn lighting_with_pattern_applied(){
+        
+        let m = Material {
+            ambient: 1.0,
+            diffuse: 0.0,
+            specular: 0.0,
+            shininess: 200.0,
+            pattern: StripePattern::new(Color::white(), Color::black())
+        };
+        let eyev = Vector::new(0.0, 0.0, -1.0);
+        let normalv = Vector::new(0.0, 0.0, -1.0);
+        let light = PointLight::new(Point::new(0.0, 0.0, -10.0), Color::new(1.0, 1.0, 1.0));
+        let sphere = Sphere::new(0);
+        let c1 = lighting(&m, &sphere, &Point::new(0.9, 0.0, 0.0), &light, &eyev,  &normalv, false);
+        let c2 = lighting(&m, &sphere, &Point::new(1.1, 0.0, 0.0), &light, &eyev,  &normalv, false);
+
+        assert_eq!(c1, Color::white());
+        assert_eq!(c2, Color::black());
+
+    }
+
+    #[test]
+    fn stripes_with_object_transformation(){
+        let mut object = Sphere::new(1);
+       object.set_transform(scaling(2., 2., 2.));
+       let pattern = StripePattern::new(Color::white(), Color::black());
+
+       let c= pattern.at_object(&object, &Point::new(1.5, 0.0, 0.0));
+       assert_eq!(c, Color::white());
+    }
+
+    #[test]
+    fn stripes_with_pattern_transformation(){
+        let mut object = Sphere::new(1);
+        object.set_transform(scaling(2., 2., 2.));
+        let pattern = StripePattern::new(Color::white(), Color::black());
+        let c= pattern.at_object(&object, &Point::new(1.5, 0.0, 0.0));
+        assert_eq!(c, Color::white());
+    }
+
+    #[test]
+    fn stripes_with_pattern_and_object_transformation(){
+        let mut object = Sphere::new(1);
+        object.set_transform(translation(0.5, 0., 0.));
+        let pattern = StripePattern::new(Color::white(), Color::black());
+        let c= pattern.at_object(&object, &Point::new(2.5, 0.0, 0.0));
+        assert_eq!(c, Color::white());
+    }
+
+    #[test]
+    fn gradient_pattern_linear_blend(){
+        let pattern = GradientPattern::new(Color::white(), Color::black());
+        assert_eq!(pattern.at(&Point::new(0.0, 0.0, 0.0)), Color::white());
+        assert_eq!(pattern.at(&Point::new(0.25, 0.0, 0.0)), Color::new(0.75, 0.75, 0.75));
+        assert_eq!(pattern.at(&Point::new(0.5, 0.0, 0.0)), Color::new(0.5, 0.5, 0.5));
+        assert_eq!(pattern.at(&Point::new(0.75, 0.0, 0.0)), Color::new(0.25, 0.25, 0.25));
+    }
+
+    #[test]
+    fn ring_pattern_extension_in_x_and_z(){
+        let pattern = RingPattern::new(Color::white(), Color::black());
+        assert_eq!(pattern.at(&Point::new(0.0, 0.0, 0.0)), Color::white());
+        assert_eq!(pattern.at(&Point::new(1.0, 0.0, 0.0)), Color::black());
+        assert_eq!(pattern.at(&Point::new(0.0, 0.0, 1.0)), Color::black());
+        assert_eq!(pattern.at(&Point::new(0.708, 0.0, 0.708)), Color::black());
+    }
+
+    #[test]
+    fn checker_pattern_repeating() {
+        let pattern = CheckerPattern::new(Color::white(), Color::black());
+        assert_eq!(pattern.at(&Point::new(0.0, 0.0, 0.0)), Color::white());
+        assert_eq!(pattern.at(&Point::new(0.0, 0.0, 0.99)), Color::white());
+        assert_eq!(pattern.at(&Point::new(0.0, 0.0, 1.01)), Color::black());
     }
 }

@@ -32,7 +32,7 @@ pub trait Shape: Debug {
 /// transform matrix, which operates on rays that intersect with the sphere. 
 /// 
 /// This implementation detail may change in the future.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Sphere {
     origin: Point,
     id: usize,
@@ -107,7 +107,7 @@ impl Shape for Sphere {
 }
 
 /// A plane is a flat surface that extends infinitely in two dimensions.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Plane {
     transform: Matrix4,
     material: Material,
@@ -118,7 +118,7 @@ impl Plane {
         Self { 
             transform: Matrix4::ident(), 
             material: Material::default(), 
-            }
+        }
     }
 
 }

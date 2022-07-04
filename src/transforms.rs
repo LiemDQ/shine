@@ -59,7 +59,6 @@ pub fn shearing(xy: f64, xz: f64, yx: f64, yz: f64, zx: f64, zy: f64) -> Matrix4
 #[cfg(test)]
 mod test {
     
-#[cfg(test)]
     use crate::coords::{Coord, Point, Vector};
     use std::f64::consts::PI;
     use super::*;

@@ -7,6 +7,7 @@ mod transforms;
 mod ray;
 mod geometry;
 mod world;
+mod color;
 
 use coords::{Point, Vector, Coord};
 use geometry::{Sphere, Shape, Plane};
@@ -14,26 +15,30 @@ use std::{fs, io};
 use transforms::*;
 use world::*;
 
-use crate::{ray::PointLight, canvas::Color};
+use crate::{ray::*, canvas::Color};
 
 fn main() -> io::Result<()> {
     use std::f64::consts::PI;
-    let floor = Box::new(Plane::new());
+    let mut floor = Box::new(Plane::new());
+    floor.set_transform(translation(0.0, 0.0, 0.0));
+    floor.mut_material().pattern = CheckerPattern::new(Color::black(), Color::white());
 
 
     let mut middle = Box::new(Sphere::new(4));
     middle.set_transform(
         translation(-0.5, 1., 0.5)
     );
-    middle.mut_material().color = Color::new(0.1, 1., 0.5);
+    middle.mut_material().pattern = SolidPattern::new(Color::new(0.1, 1., 0.5));
     middle.mut_material().diffuse = 0.7;
     middle.mut_material().specular = 0.3;
+    // middle.mut_material().pattern = CheckerPattern::new(Color::red(), Color::white());
+    // middle.mut_material().pattern.set_transform(scaling(0.25, 0.25, 0.25));
 
     let mut right = Box::new(Sphere::new(5));
     right.set_transform(
         translation(1.5, 0.5, -0.5)*scaling(0.5, 0.5, 0.5)
     );
-    right.mut_material().color = Color::new(0.5, 1.0, 0.1);
+    right.mut_material().pattern = SolidPattern::new(Color::new(0.5, 1.0, 0.1));
     right.mut_material().diffuse = 0.7;
     right.mut_material().specular = 0.3;
 
@@ -58,6 +63,6 @@ fn main() -> io::Result<()> {
 
     let canvas = camera.render(&world);
 
-    fs::write("sphere_floor.ppm", canvas.to_ppm())?;
+    fs::write("sphere_checkered_floor.ppm", canvas.to_ppm())?;
     Ok(())
 }

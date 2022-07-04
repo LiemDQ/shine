@@ -1,7 +1,7 @@
 use crate::canvas::{Color, Canvas};
 use crate::geometry::{Sphere, Shape};
 use crate::matrix::{Matrix4, LinAlg};
-use crate::ray::{PointLight, Material, Ray, Intersection, Computations, prepare_computations, lighting};
+use crate::ray::{PointLight, Material, Ray, Intersection, Computations, prepare_computations, lighting, SolidPattern};
 use crate::coords::{Point, Coord, Vector, cross};
 use crate::transforms::{scaling, translation};
 use std::cmp::Ordering::Less;
@@ -19,7 +19,7 @@ impl Default for World {
         let light = PointLight::new(Point::new(-10., 10., -10.), Color::new(1., 1., 1.));
         let mut s1 = Box::new(Sphere::new(0));
         s1.set_material( Material{
-            color: Color::new(0.8, 1.0, 0.6),
+            pattern: SolidPattern::new(Color::new(0.8, 1.0, 0.6)),
             specular: 0.2,
             diffuse: 0.7,
             shininess: 200.0,
@@ -45,7 +45,8 @@ impl World {
     pub fn shade_hit(&self, comps: &Computations) -> Color {
         lighting(
             comps.object.material(), 
-            &comps.point, 
+            comps.object,
+            &comps.over_point, 
             self.lights.first().unwrap(), 
             &comps.eyev, 
             &comps.normalv,
@@ -218,7 +219,8 @@ mod test {
         outer.mut_material().ambient = 1.0; 
         let inner = &mut w.objects[1];
         inner.mut_material().ambient = 1.0;
-        let inner_color = inner.material().color;
+        let sphere = Sphere::new(0);
+        let inner_color = inner.material().color(&sphere, &Point::zero());
     
         let ray = Ray::new(Point::new(0., 0., 0.75), Vector::new(0., 0., -1.));
         let c = w.color_at(&ray);
