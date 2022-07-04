@@ -9,7 +9,7 @@ mod geometry;
 mod world;
 
 use coords::{Point, Vector, Coord};
-use geometry::Sphere;
+use geometry::{Sphere, Shape, Plane};
 use std::{fs, io};
 use transforms::*;
 use world::*;
@@ -18,50 +18,34 @@ use crate::{ray::PointLight, canvas::Color};
 
 fn main() -> io::Result<()> {
     use std::f64::consts::PI;
-    let mut floor = Sphere::new(1);
-    floor.set_transform(scaling(10., 0.01, 10.));
-    floor.material.color = Color::new(1., 0.9, 0.9);
-    floor.material.specular = 0.;
+    let floor = Box::new(Plane::new());
 
-    let mut left_wall = Sphere::new(2);
-    left_wall.set_transform(
-        translation(0., 0., 5.)*rotation_y(-PI/4.0)
-        *rotation_x(PI/2.0)*scaling(10., 0.01, 10.)
-    );
-    left_wall.material = floor.material;
 
-    let mut right_wall = Sphere::new(3);
-    right_wall.set_transform(
-        translation(0., 0., 5.)*rotation_y(PI/4.0)
-        *rotation_x(PI/2.0)*scaling(10., 0.01, 10.)
-    );
-    right_wall.material = floor.material;
-
-    let mut middle = Sphere::new(4);
+    let mut middle = Box::new(Sphere::new(4));
     middle.set_transform(
         translation(-0.5, 1., 0.5)
     );
-    middle.material.color = Color::new(0.1, 1., 0.5);
-    middle.material.diffuse = 0.7;
-    middle.material.specular = 0.3;
+    middle.mut_material().color = Color::new(0.1, 1., 0.5);
+    middle.mut_material().diffuse = 0.7;
+    middle.mut_material().specular = 0.3;
 
-    let mut right = Sphere::new(5);
+    let mut right = Box::new(Sphere::new(5));
     right.set_transform(
         translation(1.5, 0.5, -0.5)*scaling(0.5, 0.5, 0.5)
     );
-    right.material.color = Color::new(0.5, 1.0, 0.1);
-    right.material.diffuse = 0.7;
-    right.material.specular = 0.3;
+    right.mut_material().color = Color::new(0.5, 1.0, 0.1);
+    right.mut_material().diffuse = 0.7;
+    right.mut_material().specular = 0.3;
 
-    let mut left = Sphere::new(6);
+    let mut left = Box::new(Sphere::new(6));
     left.set_transform(
         translation(-1.5, 0.33, -0.75)*scaling(0.33, 0.33, 0.33)
     );
-    left.material.diffuse = 0.7;
-    left.material.specular = 0.3;
+    left.mut_material().diffuse = 0.7;
+    left.mut_material().specular = 0.3;
 
     let world = World{
-        objects: vec![floor, left_wall, right_wall, middle, right, left],
+        objects: vec![floor, middle, right, left],
         lights: vec![PointLight::new(Point::new(-10., 10., -10.), Color::new(1., 1., 1.))],
     };
 
@@ -74,6 +58,6 @@ fn main() -> io::Result<()> {
 
     let canvas = camera.render(&world);
 
-    fs::write("sphere_scene_shadowed.ppm", canvas.to_ppm())?;
+    fs::write("sphere_floor.ppm", canvas.to_ppm())?;
     Ok(())
 }

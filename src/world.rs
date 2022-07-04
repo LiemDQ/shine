@@ -1,5 +1,5 @@
 use crate::canvas::{Color, Canvas};
-use crate::geometry::Sphere;
+use crate::geometry::{Sphere, Shape};
 use crate::matrix::{Matrix4, LinAlg};
 use crate::ray::{PointLight, Material, Ray, Intersection, Computations, prepare_computations, lighting};
 use crate::coords::{Point, Coord, Vector, cross};
@@ -10,22 +10,22 @@ use std::cmp::Ordering::Less;
 use crate::utils::float_approx;
 
 pub struct World {
-    pub objects: Vec<Sphere>,
+    pub objects: Vec<Box<dyn Shape>>,
     pub lights: Vec<PointLight>,
 }
 
 impl Default for World {
     fn default() -> Self {
         let light = PointLight::new(Point::new(-10., 10., -10.), Color::new(1., 1., 1.));
-        let mut s1 = Sphere::new(0);
-        s1.material = Material{
+        let mut s1 = Box::new(Sphere::new(0));
+        s1.set_material( Material{
             color: Color::new(0.8, 1.0, 0.6),
             specular: 0.2,
             diffuse: 0.7,
             shininess: 200.0,
             ambient: 0.1,
-        };
-        let mut s2 = Sphere::new(1);
+        });
+        let mut s2 = Box::new(Sphere::new(1));
         s2.set_transform(scaling(0.5, 0.5, 0.5));
         Self { objects: vec![s1, s2], lights: vec![light] }
     }
@@ -44,7 +44,7 @@ impl World {
 
     pub fn shade_hit(&self, comps: &Computations) -> Color {
         lighting(
-            &comps.object.material, 
+            comps.object.material(), 
             &comps.point, 
             self.lights.first().unwrap(), 
             &comps.eyev, 
@@ -174,7 +174,7 @@ mod test {
     fn shade_world_intersection(){
         let ray = Ray::new(Point::new(0., 0., -5.), Vector::new(0., 0., 1.));
         let world = World::default();
-        let shape = world.objects.first().unwrap();
+        let shape = world.objects.first().unwrap().as_ref();
         let i = Intersection {t: 4., object: shape};
         let comps = prepare_computations(&i, &ray);
         let c = world.shade_hit(&comps);
@@ -188,7 +188,7 @@ mod test {
         let mut world = World::default();
         world.lights[0] = PointLight::new(Point::new(0., 0.25, 0.), Color::new(1., 1., 1.));
         let ray = Ray::new(Point::new(0., 0., 0.), Vector::new(0., 0., 1.));
-        let shape = &world.objects[1];
+        let shape = world.objects[1].as_ref();
         let i = Intersection {t: 0.5, object: shape};
         let comps = prepare_computations(&i, &ray);
         let c = world.shade_hit(&comps);
@@ -200,12 +200,12 @@ mod test {
     fn shade_hit_given_intersection_in_shadow(){
         let mut w= World::default();
         w.lights[0] = PointLight::new(Point::new(0., 0., -10.), Color::new(1., 1., 1.));
-        let s1 = Sphere::new(1);
-        let mut s2 = Sphere::new(2);
+        let s1 = Box::new(Sphere::new(1));
+        let mut s2 = Box::new(Sphere::new(2));
         s2.set_transform(translation(0., 0., 10.));
         let r = Ray::new(Point::new(0., 0., 5.), Vector::new(0., 0., 1.));
         w.objects = vec![s1, s2];
-        let i = Intersection {t: 4., object: &w.objects[1]};
+        let i = Intersection {t: 4., object: w.objects[1].as_ref()};
         let comps = prepare_computations(&i, &r);
         let c = w.shade_hit(&comps);
         assert_eq!(c, Color::new(0.1, 0.1, 0.1))
@@ -215,10 +215,10 @@ mod test {
     fn color_with_intersection_behind_ray(){
         let mut w = World::default();
         let outer = w.objects.first_mut().unwrap();
-        outer.material.ambient = 1.0; 
+        outer.mut_material().ambient = 1.0; 
         let inner = &mut w.objects[1];
-        inner.material.ambient = 1.0;
-        let inner_color = inner.material.color;
+        inner.mut_material().ambient = 1.0;
+        let inner_color = inner.material().color;
     
         let ray = Ray::new(Point::new(0., 0., 0.75), Vector::new(0., 0., -1.));
         let c = w.color_at(&ray);

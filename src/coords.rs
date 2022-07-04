@@ -15,7 +15,7 @@ pub trait Coord {
     fn zero() -> Self;
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct Vector {
     pub x: f64,
     pub y: f64, 
@@ -177,7 +177,7 @@ impl PartialEq<Point> for Vector {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct Point {
     pub x: f64,
     pub y: f64, 
