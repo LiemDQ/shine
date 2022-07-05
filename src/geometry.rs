@@ -2,6 +2,7 @@ use crate::{intersections, world};
 use crate::ray::{Ray, Intersection, Material};
 use crate::coords::{Point, Coord, Vector};
 use crate::matrix::{LinAlg, Matrix4};
+use crate::utils;
 use std::fmt::Debug;
 
 pub trait Shape: Debug {
@@ -24,6 +25,8 @@ pub trait Shape: Debug {
         let local_ray = ray.transform(&self.transform().inverse().unwrap());
         self.local_intersect(&local_ray)    
     }
+
+    fn id(&self) -> usize;
 }
 
 /// Sphere object.
@@ -46,20 +49,30 @@ impl Sphere {
     const RADIUS: f64 = 1.0;
 
     ///
-    pub fn new(id: usize) -> Self {
+    pub fn new() -> Self {
         
         Self { 
             origin: Point::new(0.,0.,0.), 
-            id: id, 
+            id: utils::make_id(), 
             radius: Sphere::RADIUS, 
             transform: Matrix4::ident() ,
             material: Material::default(),
         }
     }
 
-    pub fn id(&self) -> usize {
-        self.id
+    pub fn new_glass() -> Self {
+        let mut material = Material::default();
+        material.transparency = 1.0;
+        material.refractive_index = 1.5;
+        Self { 
+            origin: Point::new(0.,0.,0.), 
+            id: utils::make_id(), 
+            radius: Sphere::RADIUS, 
+            transform: Matrix4::ident() ,
+            material,
+        }
     }
+
 }
 
 impl Shape for Sphere {
@@ -74,7 +87,7 @@ impl Shape for Sphere {
     fn set_material(&mut self, m: Material) {
         self.material = m;
     }
-
+    
     fn material(&self) -> &Material {
         &self.material
     }
@@ -82,7 +95,7 @@ impl Shape for Sphere {
     fn mut_material(&mut self) -> &mut Material {
         &mut self.material
     }
-
+    
     fn local_intersect(&self, ray: &Ray) -> Vec<Intersection> {
         
         let sphere_to_ray = ray.origin - self.origin;
@@ -90,19 +103,23 @@ impl Shape for Sphere {
         let b = 2. * ray.direction * sphere_to_ray;
         let c = sphere_to_ray*sphere_to_ray - self.radius;
         let discriminant = b*b - 4.0*a*c;
-
+        
         if discriminant < 0.0 {
             return Vec::new();
         }
-
+        
         let t1 = (-b - discriminant.sqrt() )/(2.0*a);
         let t2 = (-b + discriminant.sqrt() )/(2.0*a);
-
+        
         intersections![Intersection{t: t1, object: self}, Intersection{t: t2, object: self}]
     }
-
+    
     fn local_normal_at(&self, pt: &Point) -> Vector {
         pt - &self.origin
+    }
+    
+    fn id(&self) -> usize {
+        self.id
     }
 }
 
@@ -111,6 +128,7 @@ impl Shape for Sphere {
 pub struct Plane {
     transform: Matrix4,
     material: Material,
+    id: usize,
 }
 
 impl Plane {
@@ -118,6 +136,7 @@ impl Plane {
         Self { 
             transform: Matrix4::ident(), 
             material: Material::default(), 
+            id: utils::make_id(),
         }
     }
 
@@ -148,7 +167,7 @@ impl Shape for Plane {
         //case 1: ray is parallel to the plane
         //case 2: ray is coplanar to the plane
         //this is true if the ray has no y-component.
-        if ray.direction.y.abs() < 0.00001 {
+        if ray.direction.y.abs() < utils::EPSILON {
             return Vec::new();
         }
         //case 3: ray origin is above the plane
@@ -158,8 +177,12 @@ impl Shape for Plane {
         vec![Intersection{t, object: self}]
     }
 
-    fn local_normal_at(&self, pt: &Point) -> Vector {
+    fn local_normal_at(&self, _: &Point) -> Vector {
         Vector { x: 0.0, y: 1.0, z: 0.0 }        
+    }
+
+    fn id(&self) -> usize {
+        self.id
     }
 
 }
@@ -170,7 +193,7 @@ mod test {
     use crate::{transforms::{translation, scaling, rotation_z}, utils::float_eq};
     #[test]
     fn change_sphere_transform(){
-        let mut s = Sphere::new(1);
+        let mut s = Sphere::new();
         let t = translation(2., 3., 4.);
         s.set_transform(t.clone());
     
@@ -179,35 +202,35 @@ mod test {
     
     #[test]
     fn normal_on_sphere_at_pt_on_x_axis(){
-        let s = Sphere::new(1);
+        let s = Sphere::new();
         let n = s.normal_at(&Point::new(1., 0., 0.));
         assert_eq!(n, Vector::new(1., 0., 0.));
     }
     
     #[test]
     fn normal_on_sphere_at_pt_on_y_axis(){
-        let s = Sphere::new(1);
+        let s = Sphere::new();
         let n = s.normal_at(&Point::new(0., 1., 0.));
         assert_eq!(n, Vector::new(0., 1., 0.));
     }
     
     #[test]
     fn normal_on_sphere_at_pt_on_z_axis(){
-        let s = Sphere::new(1);
+        let s = Sphere::new();
         let n = s.normal_at(&Point::new(0., 0., 1.));
         assert_eq!(n, Vector::new(0., 0., 1.));
     }
     
     #[test]
     fn normal_on_sphere_at_nonaxial_pt(){
-        let s = Sphere::new(1);
+        let s = Sphere::new();
         let n = s.normal_at(&Point::new(f64::sqrt(3.0)/3.0, f64::sqrt(3.0)/3.0, f64::sqrt(3.0)/3.0));
         assert_eq!(n, Vector::new(f64::sqrt(3.0)/3.0, f64::sqrt(3.0)/3.0, f64::sqrt(3.0)/3.0));
     }
     
     #[test]
     fn normal_is_normalized_vec(){
-        let s = Sphere::new(1);
+        let s = Sphere::new();
         let n = s.normal_at(&Point::new(f64::sqrt(3.0)/3.0, f64::sqrt(3.0)/3.0, f64::sqrt(3.0)/3.0));
         //normalization is idempotent
         assert_eq!(n, n.normalize());
@@ -215,7 +238,7 @@ mod test {
     
     #[test]
     fn normal_on_translated_sphere(){
-        let mut s = Sphere::new(1);
+        let mut s = Sphere::new();
         s.set_transform(translation(0., 1., 0.));
     
         let n = s.normal_at(&Point::new(0., 1.70711, -0.70711));
@@ -224,7 +247,7 @@ mod test {
     
     #[test]
     fn normal_on_transformed_sphere(){
-        let mut s = Sphere::new(1);
+        let mut s = Sphere::new();
         s.set_transform(scaling(1., 0.5, 1.)*rotation_z(std::f64::consts::PI/5.0));
         let n = s.normal_at(&Point::new(0., f64::sqrt(2.0)/2.0, -f64::sqrt(2.0)/2.0));
         assert_eq!(n, Vector::new(0.0, 0.97014, -0.24254));

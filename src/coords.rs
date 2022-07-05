@@ -31,7 +31,8 @@ impl Vector {
         let mag = self.magnitude();
         Self { x: self.x/mag, y: self.y/mag, z: self.z/mag}
     }
-
+    
+    /// Reflects the vector around a normal vector.
     pub fn reflect(&self, normal: &Vector) -> Vector {
         self - &((2.0*(self*normal)) * normal)
     }

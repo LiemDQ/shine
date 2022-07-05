@@ -5,7 +5,7 @@ use crate::matrix::{LinAlg};
 use crate::{canvas::Color, matrix::Matrix4};
 use crate::coords::*;
 use crate::geometry::{Sphere, Shape};
-
+use crate::utils::EPSILON;
 
 #[cfg(test)]
 use crate::{utils::float_eq, transforms::*};
@@ -113,6 +113,31 @@ impl Pattern for SolidPattern {
         //noop
     }
 
+}
+
+#[derive(Debug, Copy, Clone)]
+pub struct TestPattern {
+    transform: Matrix4
+}
+
+impl TestPattern {
+    pub fn new() -> Box<Self> {
+        Box::new(Self { transform: Matrix4::ident() })
+    }
+}
+
+impl Pattern for TestPattern {
+    fn at(&self, pt: &Point) -> Color {
+        Color { red: pt.x, green: pt.y, blue: pt.z }
+    }
+
+    fn transform(&self) -> Matrix4 {
+        self.transform
+    }
+
+    fn set_transform(&mut self, t: Matrix4) {
+        self.transform = t;
+    }
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -254,6 +279,9 @@ pub struct Material {
     pub diffuse: f64,
     pub specular: f64,
     pub shininess: f64,
+    pub reflective: f64,
+    pub transparency: f64,
+    pub refractive_index: f64,
     pub pattern: Box<dyn Pattern>,
 }
 
@@ -263,15 +291,36 @@ impl Default for Material {
             ambient: 0.1, 
             diffuse: 0.9, 
             specular: 0.9, 
-            shininess: 200.0 ,
+            reflective: 0.0,
+            transparency: 0.0,
+            refractive_index: 1.0,
+            shininess: 200.0,
             pattern: SolidPattern::new(Color::new(1., 1., 1.))
         }
     }
 }
 
 impl Material {
-    pub fn new(ambient: f64, diffuse: f64, specular: f64, shininess: f64, pattern: Box<dyn Pattern> ) -> Self {
-        Self { ambient, diffuse, specular, shininess, pattern }
+    pub fn new(
+        ambient: f64, 
+        diffuse: f64, 
+        specular: f64, 
+        shininess: f64, 
+        reflective: f64, 
+        transparency: f64,
+        refractive_index: f64,
+        pattern: Box<dyn Pattern> 
+    ) -> Self {
+        Self { 
+            ambient, 
+            diffuse, 
+            specular, 
+            shininess, 
+            reflective, 
+            transparency, 
+            refractive_index, 
+            pattern 
+        }
     }
 
     pub fn color(&self, object: &dyn Shape, pt: &Point) -> Color {
@@ -328,39 +377,104 @@ pub fn lighting(
     }
 }
 
+pub fn shlick(comps: &Computations) -> f64 {
+    //cosine of angle between eye and normal vectors
+    let mut cos = comps.eyev * comps.normalv;
+
+    if comps.n1 > comps.n2 {
+        let n = comps.n1/comps.n2;
+        let sin2_t = n*n * (1.0- cos*cos);
+
+        if sin2_t > 1.0 {
+            //we have total internal reflection
+            return 1.0;
+        } 
+        
+        cos = f64::sqrt(1.0 - sin2_t);
+    }
+
+    let r0 = ((comps.n1 - comps.n2)/(comps.n1 + comps.n2)).powi(2);
+    r0 + (1.0 - r0) * (1.0-cos).powi(5)
+}
+
 pub struct Computations<'a> {
     pub t: f64,
     pub object: &'a dyn Shape,
     pub point: Point,
     pub over_point: Point,
+    pub under_point: Point,
     pub eyev: Vector,
     pub normalv: Vector,
+    pub reflectv: Vector,
     pub inside: bool,
+    pub n1: f64,
+    pub n2: f64,
 }
 
-pub fn prepare_computations<'a>(intersection: &'a Intersection, ray: &Ray) -> Computations<'a> {
-    let point = ray.position(intersection.t);
-    let mut normalv = intersection.object.normal_at(&point);
+pub fn prepare_computations<'a>(intersection: &'a Intersection, ray: &Ray, intersections: &[Intersection]) -> Computations<'a> {
+    
+    
+    //n1 is the index of the object being exited
+    let mut n1 = 1.0;
+    //n2 is the index of the object being entered
+    let mut n2 = 1.0;
+    let mut containers: Vec<&dyn Shape> = Vec::with_capacity(intersections.len());
+    
+    //if there are no intersections then there is no refraction
+    for i in intersections {
+        if i.t == intersection.t && i.object.id() == intersection.object.id() {
+            n1 = containers.last().map_or(1.0, |shape| shape.material().refractive_index);
+        }
+        if let Some(index) = containers.iter().position(|obj| obj.id() == i.object.id()) {
+            //containers contains object, which means we are exiting the object.
+            containers.remove(index);
+        } else {
+            containers.push(i.object);
+        }
+
+        if i.t == intersection.t && i.object.id() == intersection.object.id() {
+            n2 = containers.last().map_or(1.0, |shape| shape.material().refractive_index);
+            break;
+        }
+    }
+        
+    let collision_point = ray.position(intersection.t);
+    let mut normalv = intersection.object.normal_at(&collision_point);
     let inside = if normalv * -ray.direction < 0.0 {
         normalv = -normalv;
         true
     } else {
         false
     };
-    let over_point = point + normalv * 0.00001;
+    
+    //direction of any reflections
+    let reflectv = ray.direction.reflect(&normalv).normalize();
+
+    //to avoid roundoff errors during shadow creation, create collision point just above or below the surface.
+    let over_point = collision_point + normalv * EPSILON;
+
+    //to avoid roundoff errors during 
+    let under_point = collision_point - normalv * EPSILON;
+
     Computations { 
         t: intersection.t, 
         object: intersection.object, 
-        point: point, 
-        over_point: over_point,
+        point: collision_point, 
+        over_point,
+        under_point,
         eyev: -ray.direction, 
-        normalv: normalv,
-        inside: inside
+        normalv,
+        reflectv,
+        inside,
+        n1,
+        n2,
     }
 }
 
 #[cfg(test)]
 mod test {
+    const SQRT_2_OVER_2: f64 = std::f64::consts::SQRT_2/2.0;
+
     use super::*;
     #[test]
     fn create_and_query_ray(){
@@ -386,7 +500,7 @@ mod test {
     #[test]
     fn ray_intersects_sphere_at_two_points(){
         let ray = Ray::new(Point::new(0., 0., -5.), Vector::new(0., 0., 1.));
-        let s = Sphere::new(1);
+        let s = Sphere::new();
         let xs = s.intersect(&ray);
         assert_eq!(xs.len(), 2);
         assert!(float_eq(xs[0].t, 4.0));
@@ -396,7 +510,7 @@ mod test {
     #[test]
     fn ray_originates_from_inside_sphere(){
         let ray = Ray::new(Point::new(0., 0., 0.), Vector::new(0., 0., 1.));
-        let s = Sphere::new(1);
+        let s = Sphere::new();
         let xs = s.intersect(&ray);
         assert_eq!(xs.len(), 2);
         assert!(float_eq(xs[0].t, -1.0));
@@ -407,7 +521,7 @@ mod test {
     #[test]
     fn ray_misses_sphere(){
         let ray = Ray::new(Point::new(0., 2., -5.), Vector::new(0., 0., 1.));
-        let s = Sphere::new(1);
+        let s = Sphere::new();
         let xs = s.intersect(&ray);
         assert_eq!(xs.len(), 0);
     }
@@ -415,7 +529,7 @@ mod test {
     #[test]
     fn ray_intersects_sphere_at_tangent(){
         let ray = Ray::new(Point::new(0., 1., -5.), Vector::new(0., 0., 1.));
-        let s = Sphere::new(1);
+        let s = Sphere::new();
         let xs = s.intersect(&ray);
         assert_eq!(xs.len(), 2);
         assert_eq!(xs[0].t, xs[1].t);
@@ -425,7 +539,7 @@ mod test {
     #[test]
     fn sphere_behind_ray(){
         let ray = Ray::new(Point::new(0., 0., 5.), Vector::new(0., 0., 1.));
-        let s = Sphere::new(1);
+        let s = Sphere::new();
         let xs = s.intersect(&ray);
         assert_eq!(xs.len(), 2);
         assert!(float_eq(xs[0].t, -6.0));
@@ -435,7 +549,7 @@ mod test {
     #[test]
     fn intersect_sets_the_object_on_the_intersection(){
         let ray = Ray::new(Point::new(0., 0., -5.), Vector::new(0., 0., 1.));
-        let s = Sphere::new(1);
+        let s = Sphere::new();
         let xs = s.intersect(&ray);
         assert_eq!(xs.len(),2);
         // assert_eq!(xs[0].object.id(), 1);
@@ -443,7 +557,7 @@ mod test {
     
     #[test]
     fn intersection_hit_with_all_positive_t(){
-        let s = Sphere::new(1);
+        let s = Sphere::new();
         let i1 = Intersection{t: 1., object: &s};
         let i2 = Intersection{t: 2., object: &s};
         let xs = vec![i1.clone(), i2];
@@ -453,7 +567,7 @@ mod test {
     
     #[test]
     fn intersection_hit_with_some_negative_t(){
-        let s = Sphere::new(1);
+        let s = Sphere::new();
         let i1 = Intersection{t: -1., object: &s};
         let i2 = Intersection{t: 1., object: &s};
         let xs = vec![i1.clone(), i2.clone()];
@@ -463,7 +577,7 @@ mod test {
     
     #[test]
     fn intersection_hit_with_all_negative_t(){
-        let s = Sphere::new(1);
+        let s = Sphere::new();
         let i1 = Intersection{t: -1., object: &s};
         let i2 = Intersection{t: -2., object: &s};
         let xs = vec![i1, i2];
@@ -474,7 +588,7 @@ mod test {
     
     #[test]
     fn hit_is_lowest_nonnegative_interaction(){
-        let s = Sphere::new(1);
+        let s = Sphere::new();
         let i1 = Intersection{t: 5., object: &s};
         let i2 = Intersection{t: 7., object: &s};
         let i3 = Intersection{t: -3., object: &s};
@@ -506,7 +620,7 @@ mod test {
     #[test]
     fn intersect_scaled_sphere_with_ray(){
         let ray = Ray::new(Point::new(0., 0., -5.), Vector::new(0., 0., 1.));
-        let mut s = Sphere::new(1);
+        let mut s = Sphere::new();
         s.set_transform(scaling(2., 2., 2.));
         let xs = s.intersect(&ray);
         assert_eq!(xs.len(), 2);
@@ -517,7 +631,7 @@ mod test {
     #[test]
     fn intersect_translated_sphere_with_ray(){
         let ray = Ray::new(Point::new(0., 0., -5.), Vector::new(0., 0., 1.));
-        let mut s = Sphere::new(1);
+        let mut s = Sphere::new();
         s.set_transform(translation(5., 0., 0.));
         let xs = s.intersect(&ray);
         assert_eq!(xs.len(), 0);
@@ -532,7 +646,7 @@ mod test {
         let eyev = Vector::new(0., 0., -1.);
         let normalv = Vector::new(0., 0., -1.);
         let light = PointLight::new(Point::new(0., 0., -10.0), Color::white());
-        let sphere = Sphere::new(0);
+        let sphere = Sphere::new();
         let result = lighting(&m, &sphere, &p, &light, &eyev, &normalv, false);
         assert_eq!(result, Color::new(1.9, 1.9, 1.9));
     }
@@ -546,7 +660,7 @@ mod test {
         let eyev = Vector::new(0., f64::sqrt(2.0)/2.0, -f64::sqrt(2.0)/2.0);
         let normalv = Vector::new(0., 0., -1.);
         let light = PointLight::new(Point::new(0., 0., -10.0), Color::white());
-        let sphere = Sphere::new(0);
+        let sphere = Sphere::new();
         let result = lighting(&m, &sphere, &p, &light, &eyev, &normalv, false);
         //specular value should be effectively zero
         assert_eq!(result, Color::new(1.0, 1.0, 1.0));
@@ -561,7 +675,7 @@ mod test {
         let eyev = Vector::new(0., 0.0, -1.);
         let normalv = Vector::new(0., 0., -1.);
         let light = PointLight::new(Point::new(0., 10., -10.0), Color::white());
-        let sphere = Sphere::new(0);
+        let sphere = Sphere::new();
         let result = lighting(&m, &sphere, &p, &light, &eyev, &normalv, false);
         //diffuse value is reduced
         //no specular component
@@ -578,7 +692,7 @@ mod test {
         let eyev = Vector::new(0., -f64::sqrt(2.0)/2.0, -f64::sqrt(2.0)/2.0);
         let normalv = Vector::new(0., 0., -1.);
         let light = PointLight::new(Point::new(0., 10., -10.0), Color::white());
-        let sphere = Sphere::new(0);
+        let sphere = Sphere::new();
         let result = lighting(&m, &sphere, &p, &light, &eyev, &normalv, false);
         
         //specular lighting is at full strength, with diffuse and ambient lighting the same as the previous test
@@ -594,7 +708,7 @@ mod test {
         let eyev = Vector::new(0., 0., -1.);
         let normalv = Vector::new(0., 0., -1.);
         let light = PointLight::new(Point::new(0., 10., 10.0), Color::white());
-        let sphere = Sphere::new(0);
+        let sphere = Sphere::new();
         let result = lighting(&m, &sphere, &p, &light, &eyev, &normalv, false);
         
         //only ambient lighting is left
@@ -609,7 +723,7 @@ mod test {
         let normalv = Vector::new(0., 0., -1.);
         let light = PointLight::new(Point::new(0., 0., -10.), Color::new(1., 1., 1.));
         let in_shadow = true;
-        let sphere = Sphere::new(0);
+        let sphere = Sphere::new();
         let result = lighting(&m, &sphere, &pt, &light, &eyev, &normalv, in_shadow);
         assert_eq!(result, Color::new(0.1, 0.1, 0.1));
     }
@@ -617,9 +731,9 @@ mod test {
     #[test]
     fn precompute_state_of_intersection(){
         let r = Ray::new(Point::new(0., 0., -5.), Vector::new(0., 0., 1.));
-        let shape = Sphere::new(1);
+        let shape = Sphere::new();
         let i = Intersection {t: 4., object: &shape};
-        let comps = prepare_computations(&i, &r);
+        let comps = prepare_computations(&i, &r, &[]);
         assert_eq!(comps.t, i.t);
         assert_eq!(comps.point, Point::new(0., 0., -1.));
         assert_eq!(comps.normalv, Vector::new(0., 0., -1.));
@@ -628,9 +742,9 @@ mod test {
     #[test]
     fn precompute_state_of_intersection_outside(){
         let r = Ray::new(Point::new(0., 0., -5.), Vector::new(0., 0., 1.));
-        let shape = Sphere::new(1);
+        let shape = Sphere::new();
         let i = Intersection {t: 4., object: &shape};
-        let comps = prepare_computations(&i, &r);
+        let comps = prepare_computations(&i, &r, &[]);
         assert_eq!(comps.t, i.t);
         assert_eq!(comps.point, Point::new(0., 0., -1.));
         assert_eq!(comps.normalv, Vector::new(0., 0., -1.));
@@ -640,9 +754,9 @@ mod test {
     #[test]
     fn precompute_state_of_intersection_inside(){
         let r = Ray::new(Point::new(0., 0., 0.), Vector::new(0., 0., 1.));
-        let shape = Sphere::new(1);
+        let shape = Sphere::new();
         let i = Intersection {t: 1., object: &shape};
-        let comps = prepare_computations(&i, &r);
+        let comps = prepare_computations(&i, &r, &[]);
         assert_eq!(comps.t, i.t);
         assert_eq!(comps.point, Point::new(0., 0., 1.));
         assert_eq!(comps.eyev, Vector::new(0., 0., -1.));
@@ -653,15 +767,15 @@ mod test {
     #[test]
     fn hit_should_offset_point(){
         let r = Ray::new(Point::new(0., 0., -5.), Vector::new(0., 0., 1.));
-        let mut shape = Sphere::new(1);
+        let mut shape = Sphere::new();
         shape.set_transform(translation(0., 0., 1.));
         let i = Intersection {t: 5., object: &shape};
-        let comps = prepare_computations(&i, &r);
-        assert!(comps.over_point.z < -0.00001/2.);
+        let comps = prepare_computations(&i, &r, &[]);
+        assert!(comps.over_point.z < -EPSILON/2.);
         assert!(comps.point.z > comps.over_point.z );
     }
 
-    use crate::coords::Coord;
+    use crate::{coords::Coord, geometry::Plane};
 
     use super::*;
     #[test]
@@ -697,12 +811,15 @@ mod test {
             diffuse: 0.0,
             specular: 0.0,
             shininess: 200.0,
+            reflective: 0.0,
+            refractive_index: 1.0,
+            transparency: 0.0,
             pattern: StripePattern::new(Color::white(), Color::black())
         };
         let eyev = Vector::new(0.0, 0.0, -1.0);
         let normalv = Vector::new(0.0, 0.0, -1.0);
         let light = PointLight::new(Point::new(0.0, 0.0, -10.0), Color::new(1.0, 1.0, 1.0));
-        let sphere = Sphere::new(0);
+        let sphere = Sphere::new();
         let c1 = lighting(&m, &sphere, &Point::new(0.9, 0.0, 0.0), &light, &eyev,  &normalv, false);
         let c2 = lighting(&m, &sphere, &Point::new(1.1, 0.0, 0.0), &light, &eyev,  &normalv, false);
 
@@ -713,7 +830,7 @@ mod test {
 
     #[test]
     fn stripes_with_object_transformation(){
-        let mut object = Sphere::new(1);
+        let mut object = Sphere::new();
        object.set_transform(scaling(2., 2., 2.));
        let pattern = StripePattern::new(Color::white(), Color::black());
 
@@ -723,7 +840,7 @@ mod test {
 
     #[test]
     fn stripes_with_pattern_transformation(){
-        let mut object = Sphere::new(1);
+        let mut object = Sphere::new();
         object.set_transform(scaling(2., 2., 2.));
         let pattern = StripePattern::new(Color::white(), Color::black());
         let c= pattern.at_object(&object, &Point::new(1.5, 0.0, 0.0));
@@ -732,7 +849,7 @@ mod test {
 
     #[test]
     fn stripes_with_pattern_and_object_transformation(){
-        let mut object = Sphere::new(1);
+        let mut object = Sphere::new();
         object.set_transform(translation(0.5, 0., 0.));
         let pattern = StripePattern::new(Color::white(), Color::black());
         let c= pattern.at_object(&object, &Point::new(2.5, 0.0, 0.0));
@@ -763,5 +880,112 @@ mod test {
         assert_eq!(pattern.at(&Point::new(0.0, 0.0, 0.0)), Color::white());
         assert_eq!(pattern.at(&Point::new(0.0, 0.0, 0.99)), Color::white());
         assert_eq!(pattern.at(&Point::new(0.0, 0.0, 1.01)), Color::black());
+    }
+
+    #[test]
+    fn precompute_reflectv_vector() {
+        let shape = Plane::new();
+        let ray = Ray::new(Point::new(0., 1., -1.), Vector::new(0., -f64::sqrt(2.0)/2.0, f64::sqrt(2.0)/2.0));
+        let intersection = Intersection{ t: f64::sqrt(2.0), object: &shape};
+        let comps = prepare_computations(&intersection, &ray, &[]);
+        assert_eq!(comps.reflectv, Vector::new(0., f64::sqrt(2.0)/2.0, f64::sqrt(2.0)/2.0));
+    }
+
+    #[test]
+    fn find_n1_and_n2_at_various_transparent_intersections(){
+        let mut a = Sphere::new_glass();
+        a.set_transform(scaling(2., 2., 2.));
+        a.mut_material().refractive_index = 1.5;
+
+        let mut b = Sphere::new_glass();
+        b.set_transform(translation(0., 0., -0.25));
+        b.mut_material().refractive_index = 2.0;
+        
+        let mut c = Sphere::new_glass();
+        c.set_transform(translation(0., 0., 0.25));
+        c.mut_material().refractive_index = 2.5;
+
+        let ray = Ray::new(Point::new(0., 0., -4.), Vector::new(0., 0., 1.));
+        let xs = vec![
+            Intersection {t: 2., object: &a},
+            Intersection {t: 2.75, object: &b},
+            Intersection {t: 3.25, object: &c},
+            Intersection {t: 4.75, object: &b},
+            Intersection {t: 5.25, object: &c},
+            Intersection {t: 6., object: &a},
+        ];
+
+        let ans = vec![
+            (1.0, 1.5),
+            (1.5, 2.0),
+            (2.0, 2.5),
+            (2.5, 2.5),
+            (2.5, 1.5),
+            (1.5, 1.0),
+        ];
+
+        for ((i,intersect), ns) in xs.iter().enumerate().zip(ans.iter()) {
+            println!("Index: {}", i);
+            let comps = prepare_computations(intersect, &ray, xs.as_slice());
+            assert_eq!(comps.n1, ns.0);
+            assert_eq!(comps.n2, ns.1);
+        }
+    }
+
+    #[test]
+    fn under_point_offset_below_surface(){
+        let ray = Ray::new(Point::new(0., 0., -5.), Vector::new(0., 0., 1.));
+        let mut shape = Sphere::new_glass();
+        shape.set_transform(translation(0., 0., 1.));
+        let i = Intersection {t: 5., object: &shape};
+        let xs = vec![i];
+        let comps = prepare_computations(&xs[0], &ray, xs.as_slice());
+        
+        assert!(comps.under_point.z > EPSILON/2.);
+        assert!(comps.point.z < comps.under_point.z);
+    }
+
+    #[test]
+    fn shlick_approximation_under_total_internal_reflection(){
+        let ray = Ray::new(Point::new(0., 0., SQRT_2_OVER_2), Vector::new(0., 1., 0.));
+        let shape = Sphere::new_glass();
+        let xs = vec![
+            Intersection {t: -SQRT_2_OVER_2, object: &shape},
+            Intersection {t: SQRT_2_OVER_2, object: &shape},
+        ];
+
+        let comps = prepare_computations(&xs[1], &ray, xs.as_slice());
+
+        let reflectance = shlick(&comps);
+        assert!(float_eq(reflectance, 1.0));
+    }
+
+    #[test]
+    fn reflectance_of_perpendicular_array(){
+        let ray = Ray::new(Point::zero(), Vector::new(0., 1., 0.));
+        let shape = Sphere::new_glass();
+        let xs = vec![
+            Intersection {t: -1.0, object: &shape},
+            Intersection {t: 1.0, object: &shape},
+        ];
+
+        let comps = prepare_computations(&xs[1], &ray, xs.as_slice());
+
+        let reflectance = shlick(&comps);
+        assert!(float_eq(reflectance, 0.04));
+    }
+
+    #[test]
+    fn reflectance_when_n2_lt_l1(){
+        let ray = Ray::new(Point::new(0., 0.99, -2.), Vector::new(0., 0., 1.));
+        let shape = Sphere::new_glass();
+        let xs = vec![
+            Intersection {t: 1.8589, object: &shape},
+        ];
+
+        let comps = prepare_computations(&xs[0], &ray, xs.as_slice());
+
+        let reflectance = shlick(&comps);
+        assert!(float_eq(reflectance, 0.48873));
     }
 }
